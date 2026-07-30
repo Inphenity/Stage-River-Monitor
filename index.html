@@ -326,6 +326,22 @@
     <!-- FORM COLUMN -->
     <div>
       <div class="panel">
+        <div class="panel-head"><span>00 — Network (optional)</span></div>
+        <div class="panel-body">
+          <div class="field">
+            <div class="field-label">WiFi network name (SSID)</div>
+            <input type="text" id="wifiSsid" placeholder="Leave blank to skip">
+            <div class="field-hint">Skip if the Pi already has working WiFi — the install still needs an existing connection to reach it over SSH in the first place. This is for adding an <em>additional</em> saved network alongside that one, so the Pi can also connect somewhere else automatically — a work WiFi, a mobile hotspot for on-the-go setups, or a backup network in case the primary one ever drops.</div>
+          </div>
+          <div class="field">
+            <div class="field-label">WiFi password</div>
+            <input type="password" id="wifiPassword" placeholder="Leave blank to skip">
+            <div class="field-hint toggle-warn">The generated script stores this in plain text, same as any Pi WiFi setup. Don't post the generated script somewhere public once it has a real password in it.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel" style="margin-top:20px;">
         <div class="panel-head"><span>01 — Station</span><b>required</b></div>
         <div class="panel-body">
           <div class="field">
@@ -495,6 +511,7 @@
   }
 
   function escPy(s){ return s.replace(/\\/g,'\\\\').replace(/"/g,'\\"'); }
+  function escBash(s){ return s.replace(/\\/g,'\\\\').replace(/"/g,'\\"').replace(/`/g,'\\`').replace(/\$/g,'\\$'); }
 
   function buildPythonScript(opts){
     const trendFuncs = opts.trendArrow ? `
@@ -722,6 +739,14 @@ if __name__ == "__main__":
   function buildBashScript(opts){
     const pyScript = buildPythonScript(opts);
 
+    let wifiCredsBlock = '';
+    if (opts.wifiSsid){
+      wifiCredsBlock = `
+# ---- Add WiFi network (only needed if the Pi isn't already online) ----
+sudo nmcli connection add type wifi con-name "${escBash(opts.wifiSsid)}" ifname wlan0 ssid "${escBash(opts.wifiSsid)}" wifi-sec.key-mgmt wpa-psk wifi-sec.psk "${escBash(opts.wifiPassword)}"
+`;
+    }
+
     let hdmiBlock = '';
     if (opts.hdmiOff){
       hdmiBlock = `
@@ -753,7 +778,7 @@ pip3 install requests RPi.GPIO spidev --break-system-packages
 
 # ---- 3. Enable SPI (needed for the e-paper HAT) ----
 sudo raspi-config nonint do_spi 0
-${hdmiBlock}${wifiBlock}
+${wifiCredsBlock}${hdmiBlock}${wifiBlock}
 # ---- 4. Project directory ----
 mkdir -p ~/river_display
 cd ~/river_display
@@ -785,6 +810,8 @@ echo "Done. Check ~/river_display/log.txt if the display doesn't update as expec
 
   function currentOpts(){
     return {
+      wifiSsid: $('wifiSsid').value.trim(),
+      wifiPassword: $('wifiPassword').value,
       label: $('label').value.trim() || 'River Monitor',
       siteNo: $('siteNo').value.trim() || '00000000',
       trendArrow: $('trendArrow').checked,
@@ -815,6 +842,7 @@ echo "Done. Check ~/river_display/log.txt if the display doesn't update as expec
   function updateSpecList(opts){
     const rows = [
       ['Site', opts.siteNo || '—'],
+      ['WiFi network', opts.wifiSsid ? 'included' : 'not set'],
       ['Refresh times', ':' + opts.minutes.map(m=>String(m).padStart(2,'0')).join(', :') || '—'],
       ['Active hours', `${opts.hourStart}:00–${opts.hourEnd}:00`],
       ['Trend arrow', opts.trendArrow ? 'on' : 'off'],
@@ -831,7 +859,7 @@ echo "Done. Check ~/river_display/log.txt if the display doesn't update as expec
     $('scriptBlock').textContent = buildBashScript(opts);
   }
 
-  ['label','siteNo','trendArrow','flip180','fullRefreshOnly','hdmiOff','wifiOff'].forEach(id => {
+  ['label','siteNo','trendArrow','flip180','fullRefreshOnly','hdmiOff','wifiOff','wifiSsid','wifiPassword'].forEach(id => {
     $(id).addEventListener('input', render);
     $(id).addEventListener('change', render);
   });
