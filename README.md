@@ -2,7 +2,7 @@
 
 STAGE generates a ready-to-paste install script for turning a Raspberry Pi and a small e-paper display into a dedicated, always-on river gauge monitor. Pick your USGS gauge, tune a few display options, and get one script that sets up everything — no coding required.
 
-**Live configurator:** open `index.html` in this repo, or use the GitHub Pages link at the top of this repository.
+**Live configurator:** [inphenity.github.io/Stage-River-Monitor](https://inphenity.github.io/Stage-River-Monitor/) — or open `index.html` directly from this repo.
 
 ## What it builds
 
