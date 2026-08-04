@@ -7,316 +7,211 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
-  :root{
-    --bg: #0D2431;
-    --bg-panel: #123449;
-    --bg-panel-2: #0A1D28;
-    --line: #2B5064;
-    --line-bright: #7EC8E3;
-    --ink: #E7F1F5;
-    --ink-muted: #7FA3B3;
-    --amber: #E8C468;
-    --amber-dim: #8A7546;
-    --danger: #E8896B;
-    --good: #8FCB9B;
-    --radius: 3px;
-    --mono: 'IBM Plex Mono', monospace;
-    --sans: 'IBM Plex Sans', sans-serif;
-  }
+:root{
+  --bg: #0D2431;
+  --bg-panel: #123449;
+  --bg-panel-2: #0A1D28;
+  --line: #2B5064;
+  --line-bright: #7EC8E3;
+  --ink: #E7F1F5;
+  --ink-muted: #7FA3B3;
+  --amber: #E8C468;
+  --amber-dim: #8A7546;
+  --danger: #E8896B;
+  --good: #8FCB9B;
+  --radius: 3px;
+  --mono: 'IBM Plex Mono', monospace;
+  --sans: 'IBM Plex Sans', sans-serif;
+}
+* { box-sizing: border-box; }
+body{
+  margin:0;
+  background:
+    linear-gradient(var(--bg), var(--bg)) ,
+    repeating-linear-gradient(0deg, transparent, transparent 39px, rgba(126,200,227,0.045) 40px),
+    repeating-linear-gradient(90deg, transparent, transparent 39px, rgba(126,200,227,0.045) 40px);
+  color: var(--ink);
+  font-family: var(--sans);
+  min-height:100vh;
+  padding: 32px 20px 80px;
+}
+a { color: var(--line-bright); }
+.wrap{ max-width: 1180px; margin: 0 auto; }
+header.masthead{
+  display:flex; justify-content:space-between; align-items:flex-end;
+  flex-wrap:wrap; gap:16px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 20px; margin-bottom: 36px;
+}
+.eyebrow{
+  font-family: var(--mono); font-size: 11px; letter-spacing: 0.18em;
+  text-transform: uppercase; color: var(--line-bright); margin: 0 0 10px;
+}
+h1{
+  font-family: var(--mono); font-weight: 700; font-size: clamp(34px, 5vw, 52px);
+  letter-spacing: 0.01em; margin: 0; color: var(--ink);
+}
+h1 span{ color: var(--amber); }
+.tagline{
+  font-family: var(--sans); color: var(--ink-muted); font-size: 14.5px;
+  max-width: 340px; text-align:right; line-height:1.5;
+}
+.grid{ display:grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 28px; align-items:start; }
+@media (max-width: 880px){ .grid{ grid-template-columns: 1fr; } .tagline{ text-align:left; } }
+.panel{ background: var(--bg-panel); border: 1px solid var(--line); border-radius: var(--radius); }
+.panel-head{
+  font-family: var(--mono); font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--ink-muted); padding: 14px 18px; border-bottom: 1px solid var(--line);
+  display:flex; justify-content:space-between;
+}
+.panel-head b{ color: var(--line-bright); font-weight:600; }
+.panel-body{ padding: 20px 18px; }
+.field{ margin-bottom: 20px; }
+.field:last-child{ margin-bottom:0; }
+.field-label{
+  display:flex; justify-content:space-between; align-items:baseline;
+  font-family: var(--mono); font-size: 11.5px; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--ink-muted); margin-bottom: 7px;
+}
+.field-label .req{ color: var(--amber); }
+.field-hint{ font-size: 12.5px; color: var(--ink-muted); margin-top: 6px; line-height:1.5; }
+input[type="text"], input[type="number"], input[type="password"], select{
+  width:100%; background: var(--bg-panel-2); border: 1px solid var(--line); color: var(--ink);
+  font-family: var(--mono); font-size: 14.5px; padding: 10px 12px; border-radius: var(--radius); outline: none;
+}
+input[type="text"]:focus, input[type="number"]:focus, input[type="password"]:focus, select:focus{
+  border-color: var(--line-bright); box-shadow: 0 0 0 3px rgba(126,200,227,0.18);
+}
+input::placeholder{ color: #4F7386; }
+.row2{ display:grid; grid-template-columns: 1fr 1fr; gap:14px; }
+.toggle-row{
+  display:flex; align-items:flex-start; gap:12px; padding: 11px 0; border-top: 1px dashed var(--line);
+}
+.field .toggle-row:first-of-type{ border-top:none; }
+.toggle-row input[type="checkbox"]{
+  appearance:none; width:18px; height:18px; border: 1px solid var(--line-bright); border-radius: 3px;
+  background: var(--bg-panel-2); flex: 0 0 auto; margin-top: 2px; cursor:pointer; position:relative;
+}
+.toggle-row input[type="checkbox"]:checked{ background: var(--line-bright); }
+.toggle-row input[type="checkbox"]:checked::after{
+  content:""; position:absolute; left:5px; top:1px; width:5px; height:9px;
+  border: solid var(--bg-panel-2); border-width: 0 2px 2px 0; transform: rotate(45deg);
+}
+.toggle-text{ cursor:pointer; }
+.toggle-title{ font-size: 14px; font-weight:500; }
+.toggle-desc{ font-size: 12.5px; color: var(--ink-muted); margin-top:2px; line-height:1.45; }
+.toggle-warn{ color: var(--danger); }
+.minute-picker{ display:flex; flex-wrap:wrap; gap:8px; }
+.minute-chip{
+  font-family: var(--mono); font-size: 13px; padding: 7px 10px; border:1px solid var(--line);
+  border-radius: var(--radius); background: var(--bg-panel-2); color: var(--ink-muted);
+  cursor:pointer; user-select:none;
+}
+.minute-chip.active{ border-color: var(--amber); color: var(--amber); background: rgba(232,196,104,0.08); }
+.minute-chip .chip-remove{ margin-left:7px; color: var(--danger); font-weight:700; }
+.quick-set-row{ display:flex; flex-wrap:wrap; gap:8px; margin-bottom:4px; }
+.quick-set-btn{
+  font-family: var(--mono); font-size: 12.5px; padding: 6px 12px; border:1px solid var(--line);
+  border-radius: var(--radius); background: var(--bg-panel-2); color: var(--ink-muted); cursor:pointer;
+}
+.quick-set-btn.active{ border-color: var(--line-bright); color: var(--line-bright); background: rgba(126,200,227,0.08); }
+.add-minute-row{ display:flex; gap:8px; margin-top:10px; }
+.add-minute-row input[type="number"]{ width:70px; flex: 0 0 auto; }
+.add-minute-btn{
+  font-family: var(--mono); font-size: 12.5px; letter-spacing:0.04em; padding: 8px 12px;
+  border: 1px solid var(--line-bright); border-radius: var(--radius); background: transparent;
+  color: var(--line-bright); cursor:pointer; white-space:nowrap;
+}
+.add-minute-btn:hover{ background: rgba(126,200,227,0.1); }
 
-  * { box-sizing: border-box; }
+/* Hardware picker cards */
+.hw-picker{ display:grid; grid-template-columns: 1fr 1fr; gap:12px; }
+@media (max-width: 560px){ .hw-picker{ grid-template-columns: 1fr; } }
+.hw-card{
+  border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg-panel-2);
+  padding: 14px; cursor:pointer; position:relative;
+}
+.hw-card.selected{ border-color: var(--amber); box-shadow: 0 0 0 3px rgba(232,196,104,0.12); }
+.hw-card input[type="radio"]{ position:absolute; top:14px; right:14px; accent-color: var(--amber); }
+.hw-card .hw-name{ font-family: var(--mono); font-weight:600; font-size: 14.5px; margin-bottom:4px; padding-right:24px; }
+.hw-card .hw-desc{ font-size: 12.5px; color: var(--ink-muted); line-height:1.5; }
+.hw-card .hw-tag{
+  display:inline-block; font-family: var(--mono); font-size: 10.5px; letter-spacing:0.06em;
+  text-transform:uppercase; color: var(--good); margin-top:8px;
+}
 
-  body{
-    margin:0;
-    background:
-      linear-gradient(var(--bg), var(--bg)) ,
-      repeating-linear-gradient(0deg, transparent, transparent 39px, rgba(126,200,227,0.045) 40px),
-      repeating-linear-gradient(90deg, transparent, transparent 39px, rgba(126,200,227,0.045) 40px);
-    color: var(--ink);
-    font-family: var(--sans);
-    min-height:100vh;
-    padding: 32px 20px 80px;
-  }
+/* Gauge rows (multi-button mode) */
+.gauge-row{
+  border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg-panel-2);
+  padding: 14px; margin-bottom: 12px;
+}
+.gauge-row:last-child{ margin-bottom:0; }
+.gauge-row-head{
+  display:flex; align-items:center; justify-content:space-between; margin-bottom: 12px;
+}
+.gauge-btn-badge{
+  font-family: var(--mono); font-size: 11.5px; letter-spacing: 0.08em; text-transform:uppercase;
+  color: var(--bg-panel-2); background: var(--amber); border-radius: var(--radius); padding: 3px 8px; font-weight:600;
+}
+.gauge-row .field{ margin-bottom: 12px; }
+.gauge-row .field-hint{ margin-top: 4px; }
+.gauge-empty-hint{ font-size: 12px; color: var(--ink-muted); font-style: italic; }
 
-  a { color: var(--line-bright); }
+/* WiFi network rows (dynamic, add-as-many) */
+.wifi-row{
+  border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg-panel-2);
+  padding: 14px; margin-bottom: 12px; position: relative;
+}
+.wifi-row .field{ margin-bottom: 12px; }
+.wifi-row .field:last-child{ margin-bottom: 0; }
+.wifi-row-remove{
+  position:absolute; top:10px; right:12px; color: var(--danger); font-weight:700;
+  cursor:pointer; font-family: var(--mono); font-size: 13px; background:none; border:none;
+}
 
-  .wrap{
-    max-width: 1180px;
-    margin: 0 auto;
-  }
+/* Device preview */
+.device-panel{ position: sticky; top: 24px; }
+.device-frame{ background: #17171A; border-radius: 14px; padding: 16px; }
+.device-screen{ background: #050506; border-radius: 4px; padding: 3px; }
+.spec-list{
+  font-family: var(--mono); font-size: 11.5px; color: var(--ink-muted);
+  padding: 14px 18px 16px; line-height: 1.9; border-top: 1px solid var(--line);
+}
+.spec-list div{ display:flex; justify-content:space-between; gap: 10px; }
+.spec-list span:last-child{ color: var(--ink); text-align:right; }
 
-  header.masthead{
-    display:flex;
-    justify-content:space-between;
-    align-items:flex-end;
-    flex-wrap:wrap;
-    gap:16px;
-    border-bottom: 1px solid var(--line);
-    padding-bottom: 20px;
-    margin-bottom: 36px;
-  }
-
-  .eyebrow{
-    font-family: var(--mono);
-    font-size: 11px;
-    letter-spacing: 0.18em;
-    text-transform: uppercase;
-    color: var(--line-bright);
-    margin: 0 0 10px;
-  }
-
-  h1{
-    font-family: var(--mono);
-    font-weight: 700;
-    font-size: clamp(34px, 5vw, 52px);
-    letter-spacing: 0.01em;
-    margin: 0;
-    color: var(--ink);
-  }
-  h1 span{ color: var(--amber); }
-
-  .tagline{
-    font-family: var(--sans);
-    color: var(--ink-muted);
-    font-size: 14.5px;
-    max-width: 340px;
-    text-align:right;
-    line-height:1.5;
-  }
-
-  .grid{
-    display:grid;
-    grid-template-columns: minmax(0, 1fr) 300px;
-    gap: 28px;
-    align-items:start;
-  }
-
-  @media (max-width: 880px){
-    .grid{ grid-template-columns: 1fr; }
-    .tagline{ text-align:left; }
-  }
-
-  .panel{
-    background: var(--bg-panel);
-    border: 1px solid var(--line);
-    border-radius: var(--radius);
-  }
-
-  .panel-head{
-    font-family: var(--mono);
-    font-size: 12px;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-    color: var(--ink-muted);
-    padding: 14px 18px;
-    border-bottom: 1px solid var(--line);
-    display:flex;
-    justify-content:space-between;
-  }
-  .panel-head b{ color: var(--line-bright); font-weight:600; }
-
-  .panel-body{ padding: 20px 18px; }
-
-  .field{
-    margin-bottom: 20px;
-  }
-  .field:last-child{ margin-bottom:0; }
-
-  .field-label{
-    display:flex;
-    justify-content:space-between;
-    align-items:baseline;
-    font-family: var(--mono);
-    font-size: 11.5px;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    color: var(--ink-muted);
-    margin-bottom: 7px;
-  }
-  .field-label .req{ color: var(--amber); }
-
-  .field-hint{
-    font-size: 12.5px;
-    color: var(--ink-muted);
-    margin-top: 6px;
-    line-height:1.5;
-  }
-
-  input[type="text"], input[type="number"], select{
-    width:100%;
-    background: var(--bg-panel-2);
-    border: 1px solid var(--line);
-    color: var(--ink);
-    font-family: var(--mono);
-    font-size: 14.5px;
-    padding: 10px 12px;
-    border-radius: var(--radius);
-    outline: none;
-  }
-  input[type="text"]:focus, input[type="number"]:focus, select:focus{
-    border-color: var(--line-bright);
-    box-shadow: 0 0 0 3px rgba(126,200,227,0.18);
-  }
-  input::placeholder{ color: #4F7386; }
-
-  .row2{ display:grid; grid-template-columns: 1fr 1fr; gap:14px; }
-
-  .toggle-row{
-    display:flex;
-    align-items:flex-start;
-    gap:12px;
-    padding: 11px 0;
-    border-top: 1px dashed var(--line);
-  }
-  .field .toggle-row:first-of-type{ border-top:none; }
-
-  .toggle-row input[type="checkbox"]{
-    appearance:none;
-    width:18px; height:18px;
-    border: 1px solid var(--line-bright);
-    border-radius: 3px;
-    background: var(--bg-panel-2);
-    flex: 0 0 auto;
-    margin-top: 2px;
-    cursor:pointer;
-    position:relative;
-  }
-  .toggle-row input[type="checkbox"]:checked{
-    background: var(--line-bright);
-  }
-  .toggle-row input[type="checkbox"]:checked::after{
-    content:"";
-    position:absolute;
-    left:5px; top:1px;
-    width:5px; height:9px;
-    border: solid var(--bg-panel-2);
-    border-width: 0 2px 2px 0;
-    transform: rotate(45deg);
-  }
-  .toggle-text{ cursor:pointer; }
-  .toggle-title{ font-size: 14px; font-weight:500; }
-  .toggle-desc{ font-size: 12.5px; color: var(--ink-muted); margin-top:2px; line-height:1.45; }
-  .toggle-warn{ color: var(--danger); }
-
-  .minute-picker{
-    display:flex;
-    flex-wrap:wrap;
-    gap:8px;
-  }
-  .minute-chip{
-    font-family: var(--mono);
-    font-size: 13px;
-    padding: 7px 10px;
-    border:1px solid var(--line);
-    border-radius: var(--radius);
-    background: var(--bg-panel-2);
-    color: var(--ink-muted);
-    cursor:pointer;
-    user-select:none;
-  }
-  .minute-chip.active{
-    border-color: var(--amber);
-    color: var(--amber);
-    background: rgba(232,196,104,0.08);
-  }
-
-  /* Device preview */
-  .device-panel{ position: sticky; top: 24px; }
-  .device-frame{
-    background: #17171A;
-    border-radius: 14px;
-    padding: 16px;
-  }
-  .device-screen{
-    background: #050506;
-    border-radius: 4px;
-    padding: 3px;
-  }
-  .spec-list{
-    font-family: var(--mono);
-    font-size: 11.5px;
-    color: var(--ink-muted);
-    padding: 14px 18px 16px;
-    line-height: 1.9;
-    border-top: 1px solid var(--line);
-  }
-  .spec-list div{ display:flex; justify-content:space-between; gap: 10px; }
-  .spec-list span:last-child{ color: var(--ink); text-align:right; }
-
-  /* Script output */
-  .script-panel{ margin-top: 28px; }
-  .script-actions{ display:flex; gap:10px; align-items:center; }
-
-  button.copy-btn{
-    font-family: var(--mono);
-    font-size: 12px;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    background: var(--amber);
-    color: #201808;
-    border: none;
-    padding: 8px 14px;
-    border-radius: var(--radius);
-    cursor:pointer;
-    font-weight: 600;
-  }
-  button.copy-btn:hover{ filter: brightness(1.08); }
-  button.copy-btn:active{ transform: translateY(1px); }
-  button.copy-btn:focus-visible{ outline: 2px solid var(--ink); outline-offset:2px; }
-  .copied-flag{
-    font-family: var(--mono);
-    font-size: 12px;
-    color: var(--good);
-    opacity:0;
-    transition: opacity 0.2s;
-  }
-  .copied-flag.show{ opacity:1; }
-
-  pre.script-block{
-    margin:0;
-    padding: 18px;
-    font-family: var(--mono);
-    font-size: 12px;
-    line-height: 1.6;
-    color: #C9E2EA;
-    overflow-x:auto;
-    max-height: 480px;
-    overflow-y:auto;
-    white-space: pre;
-  }
-
-  .steps{
-    font-family: var(--mono);
-    font-size: 12.5px;
-    color: var(--ink-muted);
-    padding: 16px 18px;
-    border-top: 1px solid var(--line);
-  }
-  .steps ol{ margin: 0; padding-left: 20px; line-height:1.9; }
-  .steps li::marker{ color: var(--amber); }
-
-  input[type="text"]:invalid{ border-color: var(--danger); }
-
-  footer{
-    text-align:center;
-    color: var(--ink-muted);
-    font-family: var(--mono);
-    font-size: 11.5px;
-    letter-spacing: 0.08em;
-    margin-top: 48px;
-  }
-
-  @media (prefers-reduced-motion: reduce){
-    * { transition: none !important; }
-  }
+/* Script output */
+.script-panel{ margin-top: 28px; }
+.script-actions{ display:flex; gap:10px; align-items:center; }
+button.copy-btn{
+  font-family: var(--mono); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase;
+  background: var(--amber); color: #201808; border: none; padding: 8px 14px; border-radius: var(--radius);
+  cursor:pointer; font-weight: 600;
+}
+button.copy-btn:hover{ filter: brightness(1.08); }
+button.copy-btn:active{ transform: translateY(1px); }
+button.copy-btn:focus-visible{ outline: 2px solid var(--ink); outline-offset:2px; }
+.copied-flag{ font-family: var(--mono); font-size: 12px; color: var(--good); opacity:0; transition: opacity 0.2s; }
+.copied-flag.show{ opacity:1; }
+pre.script-block{
+  margin:0; padding: 18px; font-family: var(--mono); font-size: 12px; line-height: 1.6;
+  color: #C9E2EA; overflow-x:auto; max-height: 480px; overflow-y:auto; white-space: pre;
+}
+.steps{ font-family: var(--mono); font-size: 12.5px; color: var(--ink-muted); padding: 16px 18px; border-top: 1px solid var(--line); }
+.steps ol{ margin: 0; padding-left: 20px; line-height:1.9; }
+.steps li::marker{ color: var(--amber); }
+input[type="text"]:invalid{ border-color: var(--danger); }
+.toggle-row.disabled{ opacity: 0.45; pointer-events: none; }
+select:disabled{ opacity: 0.5; }
+footer{ text-align:center; color: var(--ink-muted); font-family: var(--mono); font-size: 11.5px; letter-spacing: 0.08em; margin-top: 48px; }
+@media (prefers-reduced-motion: reduce){ * { transition: none !important; } }
 </style>
 </head>
 <body>
 <div class="wrap">
-
   <header class="masthead">
     <div>
-      <p class="eyebrow">Field Kit — USGS Telemetry to E-Paper</p>
+      <p class="eyebrow">USGS Telemetry to E-Paper</p>
       <h1>STAGE<span>.</span></h1>
     </div>
     <p class="tagline">Configure a river gauge display and generate an install script.</p>
@@ -325,24 +220,43 @@
   <div class="grid">
     <!-- FORM COLUMN -->
     <div>
+
       <div class="panel">
         <div class="panel-head"><span>00 — Network (optional)</span></div>
         <div class="panel-body">
-          <div class="field">
-            <div class="field-label">WiFi network name (SSID)</div>
-            <input type="text" id="wifiSsid" placeholder="Leave blank to skip">
-            <div class="field-hint">Skip if the Pi already has working WiFi — the install still needs an existing connection to reach it over SSH in the first place. This is for adding an <em>additional</em> saved network alongside that one, so the Pi can also connect somewhere else automatically — a work WiFi, a mobile hotspot for on-the-go setups, or a backup network in case the primary one ever drops.</div>
-          </div>
-          <div class="field">
-            <div class="field-label">WiFi password</div>
-            <input type="password" id="wifiPassword" placeholder="Leave blank to skip">
-            <div class="field-hint toggle-warn">The generated script stores this in plain text, same as any Pi WiFi setup. Don't post the generated script somewhere public once it has a real password in it.</div>
-          </div>
+          <div class="field-hint" style="margin-bottom:14px;">Skip entirely if the Pi already has working WiFi — the install still needs an existing connection to reach it over SSH in the first place. Add networks here for the Pi to connect to <em>in addition</em> to that one — a work WiFi, a mobile hotspot for on-the-go setups, a backup network in case the primary one drops, and so on.</div>
+          <div class="field-hint toggle-warn" style="margin-bottom:14px;">The Pi Zero W/WH/2W/2WH only has a 2.4GHz radio — it cannot see or join 5GHz networks. If a network you add doesn't show up, check whether it's actually a 5GHz-only SSID (or a dual-band router broadcasting the same name on both bands, where the Pi will only ever connect to the 2.4GHz half).</div>
+          <div id="wifiNetworksList"></div>
+          <button type="button" class="add-minute-btn" id="addWifiBtn" style="margin-top:4px;">+ Add WiFi network</button>
+          <div class="field-hint toggle-warn" style="margin-top:14px;">The generated script stores each password in plain text, same as any Pi WiFi setup. Don't post the generated script somewhere public once it has real passwords in it.</div>
         </div>
       </div>
 
       <div class="panel" style="margin-top:20px;">
-        <div class="panel-head"><span>01 — Station</span><b>required</b></div>
+        <div class="panel-head"><span>01 — Display hardware</span></div>
+        <div class="panel-body">
+          <div class="field">
+            <div class="hw-picker" id="hwPicker">
+              <label class="hw-card selected" id="hwCard213" for="hw213">
+                <input type="radio" name="displayHardware" id="hw213" value="2.13" checked>
+                <div class="hw-name">2.13" e-Paper HAT</div>
+                <div class="hw-desc">250×122, single gauge. The original setup — one reading, one display.</div>
+                <div class="hw-tag">Default</div>
+              </label>
+              <label class="hw-card" id="hwCard27" for="hw27">
+                <input type="radio" name="displayHardware" id="hw27" value="2.7">
+                <div class="hw-name">2.7" e-Paper HAT</div>
+                <div class="hw-desc">264×176, 4 onboard buttons. Map each button to its own gauge and flip between them on the device.</div>
+                <div class="hw-tag">Multi-gauge</div>
+              </label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- SINGLE-GAUGE STATION PANEL (2.13") -->
+      <div class="panel" style="margin-top:20px;" id="stationSinglePanel">
+        <div class="panel-head"><span>02 — Station</span><b>required</b></div>
         <div class="panel-body">
           <div class="field">
             <div class="field-label">Display label</div>
@@ -365,8 +279,17 @@
         </div>
       </div>
 
+      <!-- MULTI-GAUGE PANEL (2.7", 4 buttons) -->
+      <div class="panel" style="margin-top:20px; display:none;" id="gaugesMultiPanel">
+        <div class="panel-head"><span>02 — Gauges &amp; button mapping</span><b>at least 1 required</b></div>
+        <div class="panel-body">
+          <div class="field-hint" style="margin-bottom:16px;">Each of the 4 onboard buttons shows its own gauge. Leave a button's site number blank to skip it — pressing that button will just do nothing.</div>
+          <div id="gaugeRows"></div>
+        </div>
+      </div>
+
       <div class="panel" style="margin-top:20px;">
-        <div class="panel-head"><span>02 — Display behavior</span></div>
+        <div class="panel-head"><span>03 — Display behavior</span></div>
         <div class="panel-body" style="padding-bottom:6px;">
           <div class="toggle-row">
             <input type="checkbox" id="trendArrow" checked>
@@ -393,26 +316,49 @@
       </div>
 
       <div class="panel" style="margin-top:20px;">
-        <div class="panel-head"><span>03 — Schedule</span></div>
+        <div class="panel-head"><span>04 — Schedule</span></div>
         <div class="panel-body">
+          <div class="field">
+            <div class="field-label">Refreshes per hour</div>
+            <div class="quick-set-row" id="quickSetRow"></div>
+            <div class="field-hint">Picks evenly spaced minutes for you — e.g. 4/hour sets :00, :15, :30, :45. Fine-tune or add your own below.</div>
+          </div>
           <div class="field">
             <div class="field-label">Refresh minutes, each hour</div>
             <div class="minute-picker" id="minutePicker"></div>
-            <div class="field-hint">Click to toggle. Spacing them out (rather than every 15 min on the dot) can help catch gauge updates that don't land on a clean interval.</div>
+            <div class="add-minute-row">
+              <input type="number" id="addMinuteInput" min="0" max="59" placeholder="MM">
+              <button type="button" class="add-minute-btn" id="addMinuteBtn">+ Add minute</button>
+            </div>
+            <div class="field-hint">Click a chip's × to remove it. Spacing minutes out (rather than every 15 min on the dot) can help catch gauge updates that don't land on a clean interval.</div>
+            <div class="toggle-row" style="margin-top:4px;">
+              <input type="checkbox" id="offsetMinutes">
+              <label for="offsetMinutes" class="toggle-text">
+                <div class="toggle-title">Offset refresh by +2 minutes</div>
+                <div class="toggle-desc">Runs 2 minutes after each time above instead of exactly on it — e.g. :00 becomes :02. Helps avoid a race if USGS happens to publish its update right at the top of the interval, so the fetch doesn't just miss it.</div>
+              </label>
+            </div>
           </div>
           <div class="field">
             <div class="field-label">Active hours</div>
-            <div class="row2">
+            <div class="toggle-row" style="border-top:none; padding-top:0;">
+              <input type="checkbox" id="alwaysOn">
+              <label for="alwaysOn" class="toggle-text">
+                <div class="toggle-title">Run 24/7 (no quiet hours)</div>
+                <div class="toggle-desc">Skips the active-hours window entirely — refreshes happen around the clock. Only worth it if the Pi is plugged into wall power; on battery this burns through it much faster.</div>
+              </label>
+            </div>
+            <div class="row2" id="activeHoursRow" style="margin-top:12px;">
               <select id="hourStart"></select>
               <select id="hourEnd"></select>
             </div>
-            <div class="field-hint">Display only updates between these hours. Outside this window, it just sits showing the last reading.</div>
+            <div class="field-hint" id="activeHoursHint">Display only updates between these hours. Outside this window, it just sits showing the last reading.</div>
           </div>
         </div>
       </div>
 
       <div class="panel" style="margin-top:20px;">
-        <div class="panel-head"><span>04 — Power saving</span></div>
+        <div class="panel-head"><span>05 — Power saving</span></div>
         <div class="panel-body" style="padding-bottom:6px;">
           <div class="toggle-row">
             <input type="checkbox" id="hdmiOff" checked>
@@ -421,15 +367,16 @@
               <div class="toggle-desc">Free power saving for a headless display — no downside if you're not plugging in a monitor.</div>
             </label>
           </div>
-          <div class="toggle-row">
+          <div class="toggle-row" id="wifiOffRow">
             <input type="checkbox" id="wifiOff">
             <label for="wifiOff" class="toggle-text">
               <div class="toggle-title">Turn WiFi off outside active hours</div>
-              <div class="toggle-desc toggle-warn">Meaningful battery savings, but the Pi becomes unreachable over SSH during that window too. Only enable if you're comfortable with that trade-off.</div>
+              <div class="toggle-desc toggle-warn">Meaningful battery savings, but the Pi becomes unreachable over SSH during that window too. Only enable if you're comfortable with that trade-off. Not recommended in multi-gauge mode, since the display service keeps running (and needs WiFi) around the clock to respond to button presses.</div>
             </label>
           </div>
         </div>
       </div>
+
     </div>
 
     <!-- DEVICE PREVIEW COLUMN -->
@@ -466,24 +413,17 @@
   <!-- SCRIPT OUTPUT -->
   <div class="panel script-panel">
     <div class="panel-head">
-      <span>05 — Generated install script</span>
+      <span>06 — Generated install script</span>
       <div class="script-actions">
         <span class="copied-flag" id="copiedFlag">copied</span>
         <button class="copy-btn" id="copyBtn">Copy script</button>
       </div>
     </div>
     <pre class="script-block" id="scriptBlock"></pre>
-    <div class="steps">
-      <ol>
-        <li>SSH into the Raspberry Pi (headless is fine — SPI and cron do all the work).</li>
-        <li>Paste the script above and press enter. It installs dependencies, pulls the Waveshare e-paper library, writes the display script, and sets up the cron schedule.</li>
-        <li>If this is the first time enabling SPI on this Pi, reboot once: <code>sudo reboot</code></li>
-        <li>Wire the e-paper HAT to the 40-pin header and confirm the test run in the script output shows a display update.</li>
-      </ol>
-    </div>
+    <div class="steps" id="stepsBlock"></div>
   </div>
 
-  <footer>USGS Instantaneous Values API · Waveshare 2.13&quot; e-Paper · No signup, no key required</footer>
+  <footer id="footerText">USGS Instantaneous Values API · Waveshare e-Paper · No signup, no key required</footer>
 </div>
 
 <script>
@@ -499,31 +439,216 @@
     hourEnd.innerHTML += `<option value="${h}" ${h===22?'selected':''}>${label}</option>`;
   }
 
-  // ---- Minute picker ----
-  const allMinutes = [0,2,15,17,30,32,45,47];
-  const defaultActive = new Set([0,15,30,45]);
+  // ---- Minute picker: freeform set of active minutes, plus a quick-set ----
+  // generator for "N refreshes per hour" that fills it with evenly spaced
+  // values. Users can still add/remove individual minutes afterward.
+  let activeMinutes = new Set([0,15,30,45]);
   const minutePicker = $('minutePicker');
-  allMinutes.sort((a,b)=>a-b).forEach(m => {
-    const chip = document.createElement('div');
-    chip.className = 'minute-chip' + (defaultActive.has(m) ? ' active' : '');
-    chip.textContent = ':' + String(m).padStart(2,'0');
-    chip.dataset.min = m;
-    chip.addEventListener('click', () => { chip.classList.toggle('active'); render(); });
-    minutePicker.appendChild(chip);
+
+  function renderMinuteChips(){
+    minutePicker.innerHTML = '';
+    Array.from(activeMinutes).sort((a,b)=>a-b).forEach(m => {
+      const chip = document.createElement('div');
+      chip.className = 'minute-chip active';
+      chip.innerHTML = ':' + String(m).padStart(2,'0') + ' <span class="chip-remove">&times;</span>';
+      chip.dataset.min = m;
+      chip.addEventListener('click', () => {
+        activeMinutes.delete(m);
+        renderMinuteChips();
+        syncQuickSetHighlight();
+        render();
+      });
+      minutePicker.appendChild(chip);
+    });
+    if (activeMinutes.size === 0){
+      const hint = document.createElement('div');
+      hint.className = 'gauge-empty-hint';
+      hint.textContent = 'No refresh times set — add at least one minute below.';
+      minutePicker.appendChild(hint);
+    }
+  }
+
+  function getBaseMinutes(){
+    return Array.from(activeMinutes).sort((a,b)=>a-b);
+  }
+
+  // getActiveMinutes() is what actually gets used by the generated script -
+  // the chips/quick-set represent the "base" schedule, and the +2 offset
+  // (if enabled) is applied on top when producing the real minute list.
+  function getActiveMinutes(){
+    const base = getBaseMinutes();
+    if (!$('offsetMinutes').checked) return base;
+    return Array.from(new Set(base.map(m => (m + 2) % 60))).sort((a,b)=>a-b);
+  }
+
+  // ---- "Refreshes per hour" quick-set ----
+  const quickSetCounts = [1,2,3,4,6,12]; // clean divisors of 60
+  const quickSetRow = $('quickSetRow');
+  quickSetCounts.forEach(n => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'quick-set-btn';
+    btn.textContent = `${n}\u00d7/hr`;
+    btn.dataset.count = n;
+    btn.addEventListener('click', () => {
+      const step = 60 / n;
+      activeMinutes = new Set(Array.from({length: n}, (_, i) => i * step));
+      renderMinuteChips();
+      syncQuickSetHighlight();
+      render();
+    });
+    quickSetRow.appendChild(btn);
   });
 
-  function getActiveMinutes(){
-    return Array.from(minutePicker.querySelectorAll('.minute-chip.active'))
-      .map(c => parseInt(c.dataset.min, 10))
-      .sort((a,b)=>a-b);
+  function syncQuickSetHighlight(){
+    // Highlight a quick-set button only if the current *base* minutes
+    // (before any +2 offset) exactly match what that count would
+    // generate - lets a custom edit fall out of "selected" state
+    // naturally rather than showing a stale pick. Compared against the
+    // base list, not getActiveMinutes(), so the offset toggle doesn't
+    // make an otherwise-matching quick-set look deselected.
+    const current = getBaseMinutes();
+    quickSetRow.querySelectorAll('.quick-set-btn').forEach(btn => {
+      const n = parseInt(btn.dataset.count, 10);
+      const step = 60 / n;
+      const expected = Array.from({length: n}, (_, i) => i * step);
+      const matches = current.length === expected.length && current.every((m, i) => m === expected[i]);
+      btn.classList.toggle('active', matches);
+    });
+  }
+
+  $('addMinuteBtn').addEventListener('click', () => {
+    const input = $('addMinuteInput');
+    const m = parseInt(input.value, 10);
+    if (Number.isInteger(m) && m >= 0 && m <= 59){
+      activeMinutes.add(m);
+      input.value = '';
+      renderMinuteChips();
+      syncQuickSetHighlight();
+      render();
+    }
+  });
+  $('addMinuteInput').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter'){ e.preventDefault(); $('addMinuteBtn').click(); }
+  });
+  $('offsetMinutes').addEventListener('change', render);
+
+  renderMinuteChips();
+  syncQuickSetHighlight();
+
+  // ---- WiFi networks: dynamic, add-as-many-as-you-want list ----
+  const wifiNetworksList = $('wifiNetworksList');
+  let wifiRowCount = 0;
+
+  function addWifiRow(){
+    const id = wifiRowCount++;
+    const row = document.createElement('div');
+    row.className = 'wifi-row';
+    row.dataset.rowId = id;
+    row.innerHTML = `
+      <button type="button" class="wifi-row-remove" aria-label="Remove network">&times;</button>
+      <div class="field">
+        <div class="field-label">WiFi network name (SSID)</div>
+        <input type="text" class="wifiSsidInput" placeholder="Network name">
+      </div>
+      <div class="field">
+        <div class="field-label">WiFi password</div>
+        <input type="password" class="wifiPasswordInput" placeholder="Password">
+      </div>
+    `;
+    row.querySelector('.wifi-row-remove').addEventListener('click', () => {
+      row.remove();
+      render();
+    });
+    row.querySelectorAll('input').forEach(el => {
+      el.addEventListener('input', render);
+      el.addEventListener('change', render);
+    });
+    wifiNetworksList.appendChild(row);
+    return row;
+  }
+
+  $('addWifiBtn').addEventListener('click', () => { addWifiRow(); render(); });
+
+  function getWifiNetworks(){
+    return Array.from(wifiNetworksList.querySelectorAll('.wifi-row'))
+      .map(row => ({
+        ssid: row.querySelector('.wifiSsidInput').value.trim(),
+        password: row.querySelector('.wifiPasswordInput').value,
+      }))
+      .filter(n => n.ssid);
+  }
+
+  // ---- Hardware picker cards ----
+  const hwCards = { '2.13': $('hwCard213'), '2.7': $('hwCard27') };
+  function syncHwCards(){
+    const val = document.querySelector('input[name="displayHardware"]:checked').value;
+    Object.entries(hwCards).forEach(([v, card]) => card.classList.toggle('selected', v === val));
+    $('stationSinglePanel').style.display = (val === '2.13') ? '' : 'none';
+    $('gaugesMultiPanel').style.display = (val === '2.7') ? '' : 'none';
+  }
+  document.querySelectorAll('input[name="displayHardware"]').forEach(r => {
+    r.addEventListener('change', () => { syncHwCards(); render(); });
+  });
+
+  // ---- Gauge rows (multi-button mode, 4 fixed slots) ----
+  const gaugeRowsEl = $('gaugeRows');
+  for (let b = 1; b <= 4; b++){
+    const row = document.createElement('div');
+    row.className = 'gauge-row';
+    row.innerHTML = `
+      <div class="gauge-row-head">
+        <span class="gauge-btn-badge">Button ${b}</span>
+      </div>
+      <div class="field">
+        <div class="field-label">Display label</div>
+        <input type="text" id="gauge${b}Label" placeholder="e.g. Millrace" maxlength="18">
+      </div>
+      <div class="field">
+        <div class="field-label">USGS site number</div>
+        <input type="text" id="gauge${b}Site" placeholder="Leave blank to leave this button unused" pattern="[0-9]{8,15}">
+      </div>
+      <div class="field">
+        <div class="field-label">Measurement</div>
+        <select id="gauge${b}Measurement">
+          <option value="discharge">Discharge (cfs)</option>
+          <option value="gaugeHeight">Gauge height (ft)</option>
+        </select>
+      </div>
+    `;
+    gaugeRowsEl.appendChild(row);
+  }
+  for (let b = 1; b <= 4; b++){
+    ['Label','Site','Measurement'].forEach(suffix => {
+      const el = $(`gauge${b}${suffix}`);
+      el.addEventListener('input', render);
+      el.addEventListener('change', render);
+    });
+  }
+
+  function getGauges(){
+    const gauges = [];
+    for (let b = 1; b <= 4; b++){
+      const site = $(`gauge${b}Site`).value.trim();
+      if (!site) continue;
+      gauges.push({
+        button: b,
+        label: $(`gauge${b}Label`).value.trim() || `Gauge ${b}`,
+        siteNo: site,
+        measurement: $(`gauge${b}Measurement`).value,
+      });
+    }
+    return gauges;
   }
 
   function escPy(s){ return s.replace(/\\/g,'\\\\').replace(/"/g,'\\"'); }
   function escBash(s){ return s.replace(/\\/g,'\\\\').replace(/"/g,'\\"').replace(/`/g,'\\`').replace(/\$/g,'\\$'); }
 
-  function buildPythonScript(opts){
+  // ==================================================================
+  // SINGLE-GAUGE (2.13") PYTHON SCRIPT
+  // ==================================================================
+  function buildPythonScriptSingle(opts){
     const trendFuncs = opts.trendArrow ? `
-
 def get_trend(values, lookback=4):
     """Compare the latest reading to the average of the preceding few
     points to smooth out minor noise. Returns 'up', 'down', or 'flat'."""
@@ -538,7 +663,6 @@ def get_trend(values, lookback=4):
     elif diff < -threshold:
         return "down"
     return "flat"
-
 
 def draw_trend_arrow(draw, trend, x, y, size=14):
     if trend == "up":
@@ -574,25 +698,20 @@ USGS River Gauge Display for Waveshare 2.13" e-Paper HAT
 Generated by STAGE. Pulls current + 48-hour historical ${measurementName}
 from USGS site ${opts.siteNo} and renders it with a sparkline trend graph.
 """
-
 import os
 import sys
 import requests
 from datetime import datetime
 from PIL import Image, ImageDraw, ImageFont
-
 from waveshare_epd import epd2in13_V4 as epd_driver
 
 SITE_NO = "${opts.siteNo}"
 DISCHARGE_CODE = "${paramCode}"
 HISTORY_PERIOD = "P2D"
-
 FULL_REFRESH_EVERY = 8
 STATE_FILE = os.path.expanduser("~/.river_display_state")
-
 FONT_PATH_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 FONT_PATH_REG = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
-
 
 def get_run_count():
     try:
@@ -601,11 +720,9 @@ def get_run_count():
     except (FileNotFoundError, ValueError):
         return 0
 
-
 def save_run_count(n):
     with open(STATE_FILE, "w") as f:
         f.write(str(n))
-
 
 def fetch_current(site_no=SITE_NO):
     url = "https://waterservices.usgs.gov/nwis/iv/"
@@ -624,7 +741,6 @@ def fetch_current(site_no=SITE_NO):
         latest = series["values"][0]["value"][0]
         results[code] = {"value": latest["value"], "time": latest["dateTime"]}
     return results
-
 
 def fetch_history(site_no=SITE_NO, param_code=DISCHARGE_CODE, period=HISTORY_PERIOD):
     url = "https://waterservices.usgs.gov/nwis/iv/"
@@ -650,7 +766,6 @@ def fetch_history(site_no=SITE_NO, param_code=DISCHARGE_CODE, period=HISTORY_PER
         values.append(v)
     return values
 
-
 def format_timestamp(iso_ts):
     try:
         dt = datetime.fromisoformat(iso_ts)
@@ -658,7 +773,6 @@ def format_timestamp(iso_ts):
     except Exception:
         return iso_ts
 ${trendFuncs}
-
 def draw_sparkline(draw, values, x, y, width, height):
     draw.rectangle((x, y, x + width, y + height), outline=0)
     if len(values) < 2:
@@ -677,7 +791,6 @@ def draw_sparkline(draw, values, x, y, width, height):
         py = y + pad + int((1 - (v - v_min) / v_range) * plot_h)
         points.append((px, py))
     draw.line(points, fill=0, width=2)
-
     font_tiny = ImageFont.truetype(FONT_PATH_REG, 10)
     max_label = f"{v_max:.2f}"
     min_label = f"{v_min:.2f}"
@@ -688,34 +801,27 @@ def draw_sparkline(draw, values, x, y, width, height):
     draw.text(max_pos, max_label, font=font_tiny, fill=0)
     draw.text(min_pos, min_label, font=font_tiny, fill=0)
 
-
 def render_display(discharge, timestamp, history_values):
     epd = epd_driver.EPD()
 ${refreshLogic}
-
     image = Image.new('1', (epd.height, epd.width), 255)
     draw = ImageDraw.Draw(image)
-
     font_title = ImageFont.truetype(FONT_PATH_BOLD, 14)
     font_body = ImageFont.truetype(FONT_PATH_BOLD, 30)
     font_small = ImageFont.truetype(FONT_PATH_REG, 10)
-
     draw.text((5, 1), "${escPy(opts.label)}", font=font_title, fill=0)
     refresh_str = datetime.now().strftime("Updated %I:%M %p")
     draw.text((150, 2), refresh_str, font=font_small, fill=0)
     draw.text((5, 16), f"{discharge} ${unitLabel}", font=font_body, fill=0)
-
     ts_full = format_timestamp(timestamp)
     ts_date, _, ts_time = ts_full.partition(" ")
     draw.text((165, 32), ts_date, font=font_small, fill=0)
     draw.text((165, 46), ts_time, font=font_small, fill=0)
 ${trendCall}
-
     draw.text((5, 54), "48h trend (${unitLabel}):", font=font_small, fill=0)
     draw_sparkline(draw, history_values, x=5, y=68, width=240, height=50)
 ${rotateLine}
     buf = epd.getbuffer(image)
-
     if do_full_refresh:
         epd.init()
         epd.Clear(0xFF)
@@ -724,9 +830,7 @@ ${rotateLine}
     else:
         epd.init()
         epd.displayPartial(buf)
-
     epd.sleep()${saveCountLine}
-
 
 def main():
     try:
@@ -742,20 +846,359 @@ def main():
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
 
+if __name__ == "__main__":
+    main()
+`;
+  }
+
+  // ==================================================================
+  // MULTI-GAUGE (2.7", 4-button) PYTHON SCRIPT
+  // ==================================================================
+  function buildPythonScriptMulti(opts){
+    const gauges = opts.gauges;
+    const gaugesDict = gauges.map(g => {
+      const paramCode = g.measurement === 'gaugeHeight' ? '00065' : '00060';
+      const unit = g.measurement === 'gaugeHeight' ? 'ft' : 'cfs';
+      return `    ${g.button}: {"label": "${escPy(g.label)}", "site_no": "${g.siteNo}", "param_code": "${paramCode}", "unit": "${unit}"},`;
+    }).join('\n');
+
+    const firstButton = gauges.length ? gauges[0].button : 1;
+
+    const trendFuncs = opts.trendArrow ? `
+def get_trend(values, lookback=4):
+    """Compare the latest reading to the average of the preceding few
+    points to smooth out minor noise. Returns 'up', 'down', or 'flat'."""
+    if len(values) < lookback + 1:
+        return "flat"
+    recent = values[-1]
+    baseline = sum(values[-(lookback + 1):-1]) / lookback
+    threshold = max(abs(baseline) * 0.02, 0.5)
+    diff = recent - baseline
+    if diff > threshold:
+        return "up"
+    elif diff < -threshold:
+        return "down"
+    return "flat"
+
+def draw_trend_arrow(draw, trend, x, y, size=14):
+    if trend == "up":
+        draw.polygon([(x, y + size), (x + size // 2, y), (x + size, y + size)], fill=0)
+    elif trend == "down":
+        draw.polygon([(x, y), (x + size // 2, y + size), (x + size, y)], fill=0)
+    else:
+        draw.line((x, y + size // 2, x + size, y + size // 2), fill=0, width=2)
+` : '';
+
+    const trendCall = opts.trendArrow ? `
+        trend = get_trend(entry["history"])
+        arrow_x = min(8 + int(draw.textlength(value_text, font=font_body)) + 12, w - 26)
+        draw_trend_arrow(draw, trend, x=arrow_x, y=30, size=18)` : '';
+
+    const rotateLine = opts.flip180 ? `
+    image = image.rotate(180)` : '';
+
+    return `#!/usr/bin/env python3
+"""
+Multi-Gauge USGS River Display for Waveshare 2.7" e-Paper HAT (264x176)
+Generated by STAGE. Runs continuously as a service: refreshes all
+configured gauges on a schedule in the background, switches between
+them on a short button press (redraws instantly from cache), and does
+a live USGS fetch on a press-and-hold (forces a fresh reading for that
+gauge on demand). Also does a forced fetch + redraw at startup, once
+it can actually reach the network - see wait_for_network_and_refresh()
+below - so a power-on always shows current data rather than waiting
+for the next scheduled refresh.
+
+IMPORTANT - verify the button GPIO pins below before your first run.
+The values here (BCM 5, 6, 13, 19 for KEY1-KEY4) match Waveshare's own
+2.7" e-Paper HAT demo scripts, but Waveshare has changed pinouts across
+hardware revisions before - cross-check against the schematic on
+waveshare.com/wiki/2.7inch_e-Paper_HAT for your specific board.
+
+Uses a polling loop rather than GPIO.add_event_detect for button
+presses, since newer Raspberry Pi OS releases (Debian 13 "Trixie" and
+later) have moved away from the legacy GPIO interface that
+RPi.GPIO's interrupt-based edge detection depends on.
+"""
+import os
+import sys
+import time
+import threading
+import requests
+from datetime import datetime
+from PIL import Image, ImageDraw, ImageFont
+from waveshare_epd import epd2in7 as epd_driver
+import RPi.GPIO as GPIO
+
+# ---- Button GPIO pins (BCM numbering) - verify against your board ----
+KEY_PINS = {1: 5, 2: 6, 3: 13, 4: 19}
+
+# ---- Configured gauges, keyed by button number ----
+GAUGES = {
+${gaugesDict}
+}
+
+HISTORY_PERIOD = "P2D"
+REFRESH_MINUTES = set(${JSON.stringify(opts.minutes)})
+ACTIVE_HOUR_START = ${opts.hourStart}
+ACTIVE_HOUR_END = ${opts.hourEnd}
+POLL_SECONDS = 0.05
+HOLD_SECONDS = 1.2   # how long a button must be held to force a live refresh
+DEBOUNCE_SECONDS = 0.05  # settle time after release, for switch bounce
+STATE_FILE = os.path.expanduser("~/.river_display_state")
+FONT_PATH_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+FONT_PATH_REG = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+
+cache = {}
+cache_lock = threading.Lock()
+current_button = ${firstButton}
+last_refresh_key = None  # (hour, minute) of the last completed refresh, to avoid double-firing
+
+def fetch_current(site_no, param_code):
+    url = "https://waterservices.usgs.gov/nwis/iv/"
+    params = {"format": "json", "sites": site_no, "parameterCd": param_code, "siteStatus": "active"}
+    resp = requests.get(url, params=params, timeout=15)
+    resp.raise_for_status()
+    data = resp.json()
+    series = data["value"]["timeSeries"][0]["values"][0]["value"][0]
+    return {"value": series["value"], "time": series["dateTime"]}
+
+def fetch_history(site_no, param_code, period=HISTORY_PERIOD):
+    url = "https://waterservices.usgs.gov/nwis/iv/"
+    params = {"format": "json", "sites": site_no, "parameterCd": param_code, "period": period, "siteStatus": "active"}
+    resp = requests.get(url, params=params, timeout=15)
+    resp.raise_for_status()
+    data = resp.json()
+    values = []
+    for point in data["value"]["timeSeries"][0]["values"][0]["value"]:
+        try:
+            v = float(point["value"])
+        except (ValueError, TypeError):
+            continue
+        if v <= -900000:
+            continue
+        values.append(v)
+    return values
+
+def format_timestamp(iso_ts):
+    try:
+        dt = datetime.fromisoformat(iso_ts)
+        return dt.strftime("%m/%d %I:%M %p")
+    except Exception:
+        return iso_ts
+${trendFuncs}
+def draw_sparkline(draw, values, x, y, width, height):
+    draw.rectangle((x, y, x + width, y + height), outline=0)
+    if len(values) < 2:
+        draw.text((x + 5, y + height // 2 - 6), "No trend data",
+                   font=ImageFont.truetype(FONT_PATH_REG, 12), fill=0)
+        return
+    v_min, v_max = min(values), max(values)
+    v_range = v_max - v_min if v_max != v_min else 1.0
+    pad = 4
+    plot_w = width - 2 * pad
+    plot_h = height - 2 * pad
+    points = []
+    n = len(values)
+    for i, v in enumerate(values):
+        px = x + pad + int((i / (n - 1)) * plot_w)
+        py = y + pad + int((1 - (v - v_min) / v_range) * plot_h)
+        points.append((px, py))
+    draw.line(points, fill=0, width=2)
+    font_tiny = ImageFont.truetype(FONT_PATH_REG, 10)
+    max_label = f"{v_max:.2f}"
+    min_label = f"{v_min:.2f}"
+    max_pos = (x + pad, y + pad)
+    min_pos = (x + pad, y + height - pad - 10)
+    draw.rectangle(draw.textbbox(max_pos, max_label, font=font_tiny), fill=255)
+    draw.rectangle(draw.textbbox(min_pos, min_label, font=font_tiny), fill=255)
+    draw.text(max_pos, max_label, font=font_tiny, fill=0)
+    draw.text(min_pos, min_label, font=font_tiny, fill=0)
+
+def refresh_gauge(button_num):
+    gauge = GAUGES.get(button_num)
+    if not gauge:
+        return
+    try:
+        current = fetch_current(gauge["site_no"], gauge["param_code"])
+        history = fetch_history(gauge["site_no"], gauge["param_code"])
+        with cache_lock:
+            cache[button_num] = {
+                "label": gauge["label"],
+                "unit": gauge["unit"],
+                "value": current["value"],
+                "time": current["time"],
+                "history": history,
+            }
+    except requests.RequestException as e:
+        print(f"[button {button_num}] network/API error: {e}", file=sys.stderr)
+    except Exception as e:
+        print(f"[button {button_num}] error: {e}", file=sys.stderr)
+
+def refresh_all():
+    for b in GAUGES:
+        refresh_gauge(b)
+
+def render(button_num, full_refresh=True):
+    with cache_lock:
+        entry = cache.get(button_num)
+    epd = epd_driver.EPD()
+    w, h = epd.height, epd.width  # landscape orientation, matches epd2in13 convention
+    image = Image.new('1', (w, h), 255)
+    draw = ImageDraw.Draw(image)
+    font_title = ImageFont.truetype(FONT_PATH_BOLD, 16)
+    font_body = ImageFont.truetype(FONT_PATH_BOLD, 40)
+    font_small = ImageFont.truetype(FONT_PATH_REG, 11)
+
+    if entry is None:
+        draw.text((8, 8), "No data yet", font=font_title, fill=0)
+        draw.text((8, h // 2 - 6), f"Button {button_num} is not configured", font=font_small, fill=0)
+    else:
+        # Row 1: label (left) + render timestamp (right-aligned, so it never
+        # collides with a long label regardless of font metrics)
+        draw.text((8, 4), entry["label"], font=font_title, fill=0)
+        refresh_str = datetime.now().strftime("Updated %I:%M %p")
+        refresh_w = draw.textlength(refresh_str, font=font_small)
+        draw.text((w - 8 - refresh_w, 6), refresh_str, font=font_small, fill=0)
+
+        # Row 2: the big reading. Trend arrow (if enabled) is placed
+        # dynamically just past the end of this text via textlength, and
+        # clamped so it can never run off the right edge - a fixed x here
+        # would either clip a 5-digit cfs value or leave a huge gap for a
+        # short one.
+        value_text = f'{entry["value"]} {entry["unit"]}'
+        draw.text((8, 26), value_text, font=font_body, fill=0)
+${trendCall}
+
+        # Row 3: the reading's own timestamp - on its own line below the
+        # number rather than beside it, so it can't overlap a wide value.
+        # (font_body=40 digits run ~40-44px tall from a y=26 baseline, so
+        # this row starts with a deliberate few-pixel buffer below that.)
+        ts_full = format_timestamp(entry["time"])
+        draw.text((8, 76), f"as of {ts_full}", font=font_small, fill=0)
+
+        # Row 4: trend label + sparkline, sized to whatever's left of the
+        # 176px height after the rows above
+        draw.text((8, 94), f'48h trend ({entry["unit"]}):', font=font_small, fill=0)
+        draw_sparkline(draw, entry["history"], x=8, y=108, width=w - 16, height=h - 116)
+
+${rotateLine}
+    buf = epd.getbuffer(image)
+    epd.init()
+    if full_refresh:
+        epd.Clear(0xFF)
+        epd.display(buf)
+    else:
+        epd.displayPartial(buf)
+    epd.sleep()
+
+def button_worker():
+    """
+    Short press (release before HOLD_SECONDS): switches to that gauge and
+    redraws from whatever's already cached - instant, no network call.
+
+    Press and hold (held past HOLD_SECONDS): forces a live USGS fetch for
+    that gauge right then, in addition to the normal scheduled refresh.
+    The screen updates once when the hold threshold is crossed, not
+    repeatedly while still held.
+    """
+    global current_button
+    GPIO.setmode(GPIO.BCM)
+    for pin in KEY_PINS.values():
+        GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+
+    press_start = {b: None for b in KEY_PINS}
+    hold_fired = {b: False for b in KEY_PINS}
+    last_release = {b: 0.0 for b in KEY_PINS}
+
+    while True:
+        now = time.time()
+        for button_num, pin in KEY_PINS.items():
+            pressed = GPIO.input(pin) == GPIO.LOW
+            if pressed:
+                if press_start[button_num] is None and now - last_release[button_num] > DEBOUNCE_SECONDS:
+                    press_start[button_num] = now
+                    hold_fired[button_num] = False
+                elif (press_start[button_num] is not None
+                      and not hold_fired[button_num]
+                      and now - press_start[button_num] >= HOLD_SECONDS
+                      and button_num in GAUGES):
+                    hold_fired[button_num] = True
+                    current_button = button_num
+                    refresh_gauge(button_num)  # leaves cache untouched on failure
+                    render(current_button, full_refresh=True)
+            else:
+                if press_start[button_num] is not None:
+                    if not hold_fired[button_num] and button_num in GAUGES:
+                        # released before the hold threshold - a short
+                        # press, just switch and redraw from cache
+                        current_button = button_num
+                        render(current_button, full_refresh=True)
+                    press_start[button_num] = None
+                    last_release[button_num] = now
+        time.sleep(POLL_SECONDS)
+
+def scheduler_worker():
+    global last_refresh_key
+    while True:
+        now = datetime.now()
+        in_window = ACTIVE_HOUR_START <= now.hour < ACTIVE_HOUR_END if ACTIVE_HOUR_START < ACTIVE_HOUR_END \\
+            else (now.hour >= ACTIVE_HOUR_START or now.hour < ACTIVE_HOUR_END)
+        key = (now.hour, now.minute)
+        if in_window and now.minute in REFRESH_MINUTES and key != last_refresh_key:
+            last_refresh_key = key
+            refresh_all()
+            render(current_button, full_refresh=True)
+        time.sleep(20)
+
+def wait_for_network_and_refresh():
+    """
+    Forces a fetch + redraw at startup, retrying with backoff until at
+    least one configured gauge actually succeeds. This exists because the
+    systemd service is ordered after network-online.target, but on a Pi
+    Zero that target can become 'reached' slightly before WiFi has
+    actually finished associating and getting an IP - without this retry,
+    a cold boot could sit showing "No data yet" until the next scheduled
+    refresh time, rather than updating as soon as the network is really up.
+    """
+    delay = 2
+    max_delay = 30
+    while True:
+        refresh_all()
+        with cache_lock:
+            got_data = bool(cache)
+        if got_data:
+            return
+        print(f"Startup fetch found no gauges reachable yet, retrying in {delay}s...", file=sys.stderr)
+        time.sleep(delay)
+        delay = min(delay * 2, max_delay)
+
+def main():
+    if not GAUGES:
+        print("No gauges configured - nothing to display.", file=sys.stderr)
+        sys.exit(1)
+    wait_for_network_and_refresh()
+    render(current_button, full_refresh=True)
+    threading.Thread(target=scheduler_worker, daemon=True).start()
+    button_worker()  # runs forever on the main thread
 
 if __name__ == "__main__":
     main()
 `;
   }
 
+  // ==================================================================
+  // BASH INSTALL SCRIPT
+  // ==================================================================
   function buildBashScript(opts){
-    const pyScript = buildPythonScript(opts);
-
     let wifiCredsBlock = '';
-    if (opts.wifiSsid){
+    if (opts.wifiNetworks.length){
+      const lines = opts.wifiNetworks.map(n =>
+        `sudo nmcli connection add type wifi con-name "${escBash(n.ssid)}" ifname wlan0 ssid "${escBash(n.ssid)}" wifi-sec.key-mgmt wpa-psk wifi-sec.psk "${escBash(n.password)}"`
+      ).join('\n');
       wifiCredsBlock = `
-# ---- Add WiFi network (only needed if the Pi isn't already online) ----
-sudo nmcli connection add type wifi con-name "${escBash(opts.wifiSsid)}" ifname wlan0 ssid "${escBash(opts.wifiSsid)}" wifi-sec.key-mgmt wpa-psk wifi-sec.psk "${escBash(opts.wifiPassword)}"
+# ---- Add WiFi network${opts.wifiNetworks.length > 1 ? 's' : ''} (only needed if the Pi isn't already online) ----
+${lines}
 `;
     }
 
@@ -779,7 +1222,76 @@ sudo /usr/bin/tvservice -o 2>/dev/null || true
 `;
     }
 
+    if (opts.displayHardware === '2.7'){
+      // ---- Multi-gauge, 2.7" HAT: systemd service instead of cron ----
+      const pyScript = buildPythonScriptMulti(opts);
+      const minutesList = opts.minutes.length ? opts.minutes : [0,15,30,45];
+
+      return `# ---- 1. System dependencies ----
+sudo apt-get update
+sudo apt-get install -y python3-pip python3-pil python3-numpy git fonts-dejavu-core
+
+# ---- 2. Python packages ----
+pip3 install requests RPi.GPIO spidev --break-system-packages
+
+# ---- 3. Enable SPI (needed for the e-paper HAT) ----
+sudo raspi-config nonint do_spi 0
+${wifiCredsBlock}${hdmiBlock}${wifiBlock}
+# ---- 4. Project directory ----
+mkdir -p ~/river_display
+cd ~/river_display
+
+# ---- 5. Waveshare e-Paper library ----
+rm -rf e-Paper
+git clone https://github.com/waveshare/e-Paper.git
+cp -r e-Paper/RaspberryPi_JetsonNano/python/lib/waveshare_epd .
+cp -r e-Paper/RaspberryPi_JetsonNano/python/lib/TP_lib . 2>/dev/null || true
+
+# ---- 6. The display script ----
+cat > ~/river_display/river_display.py << 'PYEOF'
+${pyScript}PYEOF
+chmod +x ~/river_display/river_display.py
+
+# ---- 7. Test run (Ctrl+C to stop once you see it come up) ----
+echo "Running a quick test now - press Ctrl+C after a few seconds once the display updates."
+cd ~/river_display
+timeout 20 python3 river_display.py; echo "Test run finished (or timed out) - check the display."
+
+# ---- 8. systemd service, so it runs continuously and survives reboots ----
+sudo tee /etc/systemd/system/river-display.service > /dev/null << SERVICEEOF
+[Unit]
+Description=Multi-gauge river display (STAGE)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=$(whoami)
+WorkingDirectory=/home/$(whoami)/river_display
+ExecStart=/usr/bin/python3 /home/$(whoami)/river_display/river_display.py
+Restart=on-failure
+RestartSec=10
+StandardOutput=append:/home/$(whoami)/river_display/log.txt
+StandardError=append:/home/$(whoami)/river_display/log.txt
+
+[Install]
+WantedBy=multi-user.target
+SERVICEEOF
+
+sudo systemctl daemon-reload
+sudo systemctl enable river-display.service
+sudo systemctl restart river-display.service
+
+echo "Done. Buttons: ${opts.gauges.map(g => `Button ${g.button} = ${g.label}`).join(', ') || '(none configured)'}"
+echo "Check ~/river_display/log.txt or 'sudo systemctl status river-display' if a button doesn't switch gauges as expected."
+`;
+    }
+
+    // ---- Single-gauge, 2.13" HAT: original cron-based install ----
+    const pyScript = buildPythonScriptSingle(opts);
     const minutesList = opts.minutes.length ? opts.minutes : [0,15,30,45];
+    const cronHourField = opts.alwaysOn ? '*' : `${opts.hourStart}-${opts.hourEnd}`;
+    const scheduleDesc = opts.alwaysOn ? '24/7' : `${opts.hourStart}:00-${opts.hourEnd}:00`;
 
     return `# ---- 1. System dependencies ----
 sudo apt-get update
@@ -804,7 +1316,6 @@ cp -r e-Paper/RaspberryPi_JetsonNano/python/lib/TP_lib . 2>/dev/null || true
 # ---- 6. The display script ----
 cat > ~/river_display/river_display.py << 'PYEOF'
 ${pyScript}PYEOF
-
 chmod +x ~/river_display/river_display.py
 
 # ---- 7. Test run ----
@@ -812,40 +1323,52 @@ echo "Running a test now..."
 cd ~/river_display
 python3 river_display.py && echo "Success! Check your display." || echo "Something failed - see error above."
 
-# ---- 8. Cron job (runs at :${minutesList.map(m=>String(m).padStart(2,'0')).join(', :')} past each hour, ${opts.hourStart}:00-${opts.hourEnd}:00) ----
+# ---- 8. Cron jobs: periodic refresh (runs at :${minutesList.map(m=>String(m).padStart(2,'0')).join(', :')} past each hour, ${scheduleDesc}) plus one at boot ----
 ( crontab -l 2>/dev/null | grep -v 'river_display.py' ;
-  echo "${minutesList.join(',')} ${opts.hourStart}-${opts.hourEnd} * * * /usr/bin/python3 /home/$(whoami)/river_display/river_display.py >> /home/$(whoami)/river_display/log.txt 2>&1" ) | crontab -
-
+  echo "${minutesList.join(',')} ${cronHourField} * * * /usr/bin/python3 /home/$(whoami)/river_display/river_display.py >> /home/$(whoami)/river_display/log.txt 2>&1" ;
+  echo "@reboot /bin/bash -c 'for i in \$(seq 1 12); do /usr/bin/python3 /home/$(whoami)/river_display/river_display.py >> /home/$(whoami)/river_display/log.txt 2>&1 && break; sleep 10; done'" ) | crontab -
 echo "Done. Check ~/river_display/log.txt if the display doesn't update as expected."
 `;
   }
 
   function currentOpts(){
+    const alwaysOn = $('alwaysOn').checked;
     return {
-      wifiSsid: $('wifiSsid').value.trim(),
-      wifiPassword: $('wifiPassword').value,
+      wifiNetworks: getWifiNetworks(),
+      displayHardware: document.querySelector('input[name="displayHardware"]:checked').value,
       label: $('label').value.trim() || 'River Monitor',
       siteNo: $('siteNo').value.trim() || '00000000',
       measurement: $('measurement').value,
+      gauges: getGauges(),
       trendArrow: $('trendArrow').checked,
       flip180: $('flip180').checked,
       fullRefreshOnly: $('fullRefreshOnly').checked,
       minutes: getActiveMinutes(),
-      hourStart: hourStart.value,
-      hourEnd: hourEnd.value,
+      alwaysOn: alwaysOn,
+      hourStart: alwaysOn ? '0' : hourStart.value,
+      hourEnd: alwaysOn ? '24' : hourEnd.value,
       hdmiOff: $('hdmiOff').checked,
-      wifiOff: $('wifiOff').checked,
+      wifiOff: alwaysOn ? false : $('wifiOff').checked,
     };
   }
 
   function updatePreview(opts){
-    $('pvLabel').textContent = opts.label;
     const group = $('previewGroup');
     group.setAttribute('transform', opts.flip180 ? 'rotate(180 125 61)' : '');
 
-    const unitLabel = opts.measurement === 'gaugeHeight' ? 'ft' : 'cfs';
-    const demoValue = opts.measurement === 'gaugeHeight' ? '4.82' : '959';
-    $('pvReading').textContent = `${demoValue} ${unitLabel}`;
+    let label, unitLabel, demoValue;
+    if (opts.displayHardware === '2.7'){
+      const first = opts.gauges[0];
+      label = first ? first.label : 'No gauge set';
+      unitLabel = first ? (first.measurement === 'gaugeHeight' ? 'ft' : 'cfs') : '';
+      demoValue = first ? (first.measurement === 'gaugeHeight' ? '4.82' : '959') : '--';
+    } else {
+      label = opts.label;
+      unitLabel = opts.measurement === 'gaugeHeight' ? 'ft' : 'cfs';
+      demoValue = opts.measurement === 'gaugeHeight' ? '4.82' : '959';
+    }
+    $('pvLabel').textContent = label;
+    $('pvReading').textContent = `${demoValue} ${unitLabel}`.trim();
     $('pvTrendLabel').textContent = `48h trend (${unitLabel}):`;
 
     const arrow = $('pvArrow');
@@ -859,31 +1382,86 @@ echo "Done. Check ~/river_display/log.txt if the display doesn't update as expec
 
   function updateSpecList(opts){
     const rows = [
-      ['Site', opts.siteNo || '—'],
-      ['Measurement', opts.measurement === 'gaugeHeight' ? 'Gauge height (ft)' : 'Discharge (cfs)'],
-      ['WiFi network', opts.wifiSsid ? 'included' : 'not set'],
+      ['Display', opts.displayHardware === '2.7' ? '2.7" (264×176, 4-button)' : '2.13" (250×122)'],
+    ];
+    if (opts.displayHardware === '2.7'){
+      if (opts.gauges.length){
+        rows.push(...opts.gauges.map(g => [`Button ${g.button}`, `${g.label} (${g.measurement === 'gaugeHeight' ? 'ft' : 'cfs'})`]));
+      } else {
+        rows.push(['Gauges', 'none configured yet']);
+      }
+    } else {
+      rows.push(['Site', opts.siteNo || '—']);
+      rows.push(['Measurement', opts.measurement === 'gaugeHeight' ? 'Gauge height (ft)' : 'Discharge (cfs)']);
+    }
+    rows.push(
+      ['WiFi networks', opts.wifiNetworks.length ? `${opts.wifiNetworks.length} added` : 'none added'],
       ['Refresh times', ':' + opts.minutes.map(m=>String(m).padStart(2,'0')).join(', :') || '—'],
-      ['Active hours', `${opts.hourStart}:00–${opts.hourEnd}:00`],
+      ['Active hours', opts.alwaysOn ? '24/7 (always on)' : `${opts.hourStart}:00–${opts.hourEnd}:00`],
       ['Trend arrow', opts.trendArrow ? 'on' : 'off'],
       ['Ghost-free mode', opts.fullRefreshOnly ? 'on' : 'off'],
       ['WiFi curfew', opts.wifiOff ? 'on' : 'off'],
-    ];
+    );
     $('specList').innerHTML = rows.map(([k,v]) => `<div><span>${k}</span><span>${v}</span></div>`).join('');
+  }
+
+  function updateSteps(opts){
+    const stepsEl = $('stepsBlock');
+    if (opts.displayHardware === '2.7'){
+      stepsEl.innerHTML = `<ol>
+        <li>SSH into the Raspberry Pi (headless is fine — SPI, GPIO, and systemd do all the work).</li>
+        <li>Paste the script above and press enter. It installs dependencies, pulls the Waveshare e-paper library, writes the display script, and installs it as a background service.</li>
+        <li>If this is the first time enabling SPI on this Pi, reboot once: <code>sudo reboot</code></li>
+        <li>Wire the e-paper HAT to the 40-pin header, confirm the test run shows a display update, then press each configured button and confirm the display switches gauges.</li>
+      </ol>`;
+    } else {
+      stepsEl.innerHTML = `<ol>
+        <li>SSH into the Raspberry Pi (headless is fine — SPI and cron do all the work).</li>
+        <li>Paste the script above and press enter. It installs dependencies, pulls the Waveshare e-paper library, writes the display script, and sets up the cron schedule.</li>
+        <li>If this is the first time enabling SPI on this Pi, reboot once: <code>sudo reboot</code></li>
+        <li>Wire the e-paper HAT to the 40-pin header and confirm the test run in the script output shows a display update.</li>
+      </ol>`;
+    }
+  }
+
+  function updateFooter(opts){
+    $('footerText').textContent = opts.displayHardware === '2.7'
+      ? 'USGS Instantaneous Values API · Waveshare 2.7" e-Paper (4-button) · No signup, no key required'
+      : 'USGS Instantaneous Values API · Waveshare 2.13" e-Paper · No signup, no key required';
   }
 
   function render(){
     const opts = currentOpts();
     updatePreview(opts);
     updateSpecList(opts);
+    updateSteps(opts);
+    updateFooter(opts);
     $('scriptBlock').textContent = buildBashScript(opts);
   }
 
-  ['label','siteNo','measurement','trendArrow','flip180','fullRefreshOnly','hdmiOff','wifiOff','wifiSsid','wifiPassword'].forEach(id => {
+  ['label','siteNo','measurement','trendArrow','flip180','fullRefreshOnly','hdmiOff','wifiOff'].forEach(id => {
     $(id).addEventListener('input', render);
     $(id).addEventListener('change', render);
   });
   hourStart.addEventListener('change', render);
   hourEnd.addEventListener('change', render);
+
+  // ---- 24/7 mode: disables the active-hours window and, since there's no
+  // "outside" window left, forces the WiFi-curfew toggle off too ----
+  const alwaysOnEl = $('alwaysOn');
+  const wifiOffRow = $('wifiOffRow');
+  function syncAlwaysOn(){
+    const on = alwaysOnEl.checked;
+    hourStart.disabled = on;
+    hourEnd.disabled = on;
+    $('activeHoursHint').textContent = on
+      ? 'Running around the clock — refreshes happen every scheduled minute, all day.'
+      : 'Display only updates between these hours. Outside this window, it just sits showing the last reading.';
+    wifiOffRow.classList.toggle('disabled', on);
+    if (on) $('wifiOff').checked = false;
+  }
+  alwaysOnEl.addEventListener('change', () => { syncAlwaysOn(); render(); });
+  syncAlwaysOn();
 
   $('copyBtn').addEventListener('click', async () => {
     try {
@@ -896,6 +1474,7 @@ echo "Done. Check ~/river_display/log.txt if the display doesn't update as expec
     }
   });
 
+  syncHwCards();
   render();
 })();
 </script>
