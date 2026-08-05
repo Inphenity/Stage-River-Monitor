@@ -9,10 +9,10 @@ STAGE generates a ready-to-paste install script for turning a Raspberry Pi and a
 A small standalone device that:
 
 - Pulls live data — discharge (cfs) or gauge height (ft), your choice — from a USGS gauge, using USGS's free public API (no signup or API key needed)
-- Displays the current reading, a "last updated" timestamp, a rising/falling trend arrow, and a 48-hour trend graph
-- Refreshes automatically on a schedule you set, only during the hours you want it awake
+- Displays the current reading, a "last updated" timestamp, a rising/falling trend arrow (comparing against the reading from 12 hours ago, so it catches slow drift rather than just short-term noise), and a 48-hour trend graph
+- Refreshes on whatever schedule you set — pick a quick "N times per hour" preset, add fully custom minutes, offset everything by +2 minutes to dodge USGS's publish timing, or skip quiet hours entirely and run 24/7 if it's plugged in rather than on battery
 - Can run on battery power for a portable setup, with power-saving options built in
-- Optionally joins additional WiFi networks (home, work, a mobile hotspot) so it's not tied to a single network
+- Optionally joins as many additional WiFi networks as you want (home, work, a mobile hotspot, a backup) — note the Pi's radio is 2.4GHz-only, it can't join 5GHz networks
 - **New:** on the 2.7" display, tracks up to 4 gauges at once and switches between them with the onboard buttons
 
 ## Two display modes
@@ -53,8 +53,8 @@ If you're starting from a brand-new SD card:
 2. Under **Display hardware**, pick your HAT: 2.13" (single gauge) or 2.7" (multi-gauge, 4 buttons).
 3. **If you picked 2.13":** fill in a display label and your USGS gauge's site number — find yours at [waterdata.usgs.gov/nwis/rt](https://waterdata.usgs.gov/nwis/rt); it's the number in the gauge's URL. Pick discharge (cfs) or gauge height (ft) — not every gauge reports both, so check your specific gauge's page first.
 4. **If you picked 2.7":** fill in the **Gauges & button mapping** section instead — one row per button, each with its own label, USGS site number, and measurement. Leave a button's site number blank to leave it unused.
-5. Adjust the toggles for trend arrow, display orientation, refresh schedule, active hours, and power-saving options to fit your setup. The live preview panel updates as you go.
-6. If needed, fill in the optional WiFi section to have the script join an additional network (only necessary if the Pi doesn't already have working WiFi, or you want to add a secondary network like a work WiFi or mobile hotspot).
+5. Adjust the toggles for trend arrow, display orientation, and power-saving options to fit your setup. For the refresh schedule, either click one of the "refreshes per hour" quick-set buttons (which fills in evenly spaced minutes for you) or build your own list by adding individual minutes — each is removable, and there's a "+2 minute" offset toggle if you want refreshes to land a couple minutes after the schedule shown, to dodge USGS's own publish timing. Set active hours, or check **Run 24/7** to skip quiet hours entirely (only worth it if the Pi's plugged into wall power — it'll drain a battery noticeably faster). The live preview panel updates as you go.
+6. If needed, use **+ Add WiFi network** to have the script join one or more additional networks (only necessary if the Pi doesn't already have working WiFi, or you want to add a secondary network like a work WiFi or mobile hotspot) — add as many as you want, each with its own SSID and password. Remember the Pi's WiFi radio is 2.4GHz-only, so a 5GHz-only network won't be visible to it.
 7. Copy the generated script with the **Copy script** button.
 8. Paste it into your SSH session on the Pi and press enter.
    - **2.13" mode:** it installs dependencies, pulls the Waveshare e-paper library, writes the display script, and sets up the cron schedule — all in one go.
