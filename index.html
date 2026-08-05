@@ -649,15 +649,31 @@ footer{ text-align:center; color: var(--ink-muted); font-family: var(--mono); fo
   // ==================================================================
   function buildPythonScriptSingle(opts){
     const trendFuncs = opts.trendArrow ? `
-def get_trend(values, lookback=4):
-    """Compare the latest reading to the average of the preceding few
-    points to smooth out minor noise. Returns 'up', 'down', or 'flat'."""
-    if len(values) < lookback + 1:
+TREND_LOOKBACK_HOURS = 12
+
+def get_trend(history, hours=TREND_LOOKBACK_HOURS):
+    """Compares the latest reading to whatever reading is closest to
+    (but not after) 'hours' ago, rather than a short recent-average -
+    that catches a slow, steady drift that a same-few-points comparison
+    would mostly wash out. Returns 'up', 'down', or 'flat'.
+    'history' is a list of (datetime, value) tuples, oldest first."""
+    if len(history) < 2:
         return "flat"
-    recent = values[-1]
-    baseline = sum(values[-(lookback + 1):-1]) / lookback
+    latest_time, latest_value = history[-1]
+    target_time = latest_time - timedelta(hours=hours)
+    baseline = None
+    for ts, v in history:
+        if ts <= target_time:
+            baseline = v
+        else:
+            break
+    if baseline is None:
+        # not enough history yet to reach back a full window (e.g. right
+        # after first setup) - fall back to the oldest point available
+        # rather than just reporting flat
+        baseline = history[0][1]
     threshold = max(abs(baseline) * 0.02, 0.5)
-    diff = recent - baseline
+    diff = latest_value - baseline
     if diff > threshold:
         return "up"
     elif diff < -threshold:
@@ -674,7 +690,7 @@ def draw_trend_arrow(draw, trend, x, y, size=14):
 ` : '';
 
     const trendCall = opts.trendArrow ? `
-    trend = get_trend(history_values)
+    trend = get_trend(history)
     draw_trend_arrow(draw, trend, x=222, y=34, size=14)` : '';
 
     const rotateLine = opts.flip180 ? `
@@ -701,7 +717,7 @@ from USGS site ${opts.siteNo} and renders it with a sparkline trend graph.
 import os
 import sys
 import requests
-from datetime import datetime
+from datetime import datetime, timedelta
 from PIL import Image, ImageDraw, ImageFont
 from waveshare_epd import epd2in13_V4 as epd_driver
 
@@ -754,7 +770,9 @@ def fetch_history(site_no=SITE_NO, param_code=DISCHARGE_CODE, period=HISTORY_PER
     resp = requests.get(url, params=params, timeout=15)
     resp.raise_for_status()
     data = resp.json()
-    values = []
+    history = []  # list of (datetime, value), oldest first - needed so the
+                   # trend arrow can look back a fixed number of HOURS
+                   # rather than a fixed number of samples
     series = data["value"]["timeSeries"][0]["values"][0]["value"]
     for point in series:
         try:
@@ -763,8 +781,12 @@ def fetch_history(site_no=SITE_NO, param_code=DISCHARGE_CODE, period=HISTORY_PER
             continue
         if v <= -900000:
             continue
-        values.append(v)
-    return values
+        try:
+            ts = datetime.fromisoformat(point["dateTime"])
+        except (ValueError, TypeError):
+            continue
+        history.append((ts, v))
+    return history
 
 def format_timestamp(iso_ts):
     try:
@@ -801,7 +823,8 @@ def draw_sparkline(draw, values, x, y, width, height):
     draw.text(max_pos, max_label, font=font_tiny, fill=0)
     draw.text(min_pos, min_label, font=font_tiny, fill=0)
 
-def render_display(discharge, timestamp, history_values):
+def render_display(discharge, timestamp, history):
+    history_values = [v for _, v in history]  # plain values for the sparkline plot
     epd = epd_driver.EPD()
 ${refreshLogic}
     image = Image.new('1', (epd.height, epd.width), 255)
@@ -865,15 +888,31 @@ if __name__ == "__main__":
     const firstButton = gauges.length ? gauges[0].button : 1;
 
     const trendFuncs = opts.trendArrow ? `
-def get_trend(values, lookback=4):
-    """Compare the latest reading to the average of the preceding few
-    points to smooth out minor noise. Returns 'up', 'down', or 'flat'."""
-    if len(values) < lookback + 1:
+TREND_LOOKBACK_HOURS = 12
+
+def get_trend(history, hours=TREND_LOOKBACK_HOURS):
+    """Compares the latest reading to whatever reading is closest to
+    (but not after) 'hours' ago, rather than a short recent-average -
+    that catches a slow, steady drift that a same-few-points comparison
+    would mostly wash out. Returns 'up', 'down', or 'flat'.
+    'history' is a list of (datetime, value) tuples, oldest first."""
+    if len(history) < 2:
         return "flat"
-    recent = values[-1]
-    baseline = sum(values[-(lookback + 1):-1]) / lookback
+    latest_time, latest_value = history[-1]
+    target_time = latest_time - timedelta(hours=hours)
+    baseline = None
+    for ts, v in history:
+        if ts <= target_time:
+            baseline = v
+        else:
+            break
+    if baseline is None:
+        # not enough history yet to reach back a full window (e.g. right
+        # after first setup) - fall back to the oldest point available
+        # rather than just reporting flat
+        baseline = history[0][1]
     threshold = max(abs(baseline) * 0.02, 0.5)
-    diff = recent - baseline
+    diff = latest_value - baseline
     if diff > threshold:
         return "up"
     elif diff < -threshold:
@@ -925,7 +964,7 @@ import sys
 import time
 import threading
 import requests
-from datetime import datetime
+from datetime import datetime, timedelta
 from PIL import Image, ImageDraw, ImageFont
 from waveshare_epd import epd2in7 as epd_driver
 import RPi.GPIO as GPIO
@@ -969,7 +1008,9 @@ def fetch_history(site_no, param_code, period=HISTORY_PERIOD):
     resp = requests.get(url, params=params, timeout=15)
     resp.raise_for_status()
     data = resp.json()
-    values = []
+    history = []  # list of (datetime, value), oldest first - needed so the
+                   # trend arrow can look back a fixed number of HOURS
+                   # rather than a fixed number of samples
     for point in data["value"]["timeSeries"][0]["values"][0]["value"]:
         try:
             v = float(point["value"])
@@ -977,8 +1018,12 @@ def fetch_history(site_no, param_code, period=HISTORY_PERIOD):
             continue
         if v <= -900000:
             continue
-        values.append(v)
-    return values
+        try:
+            ts = datetime.fromisoformat(point["dateTime"])
+        except (ValueError, TypeError):
+            continue
+        history.append((ts, v))
+    return history
 
 def format_timestamp(iso_ts):
     try:
@@ -1080,7 +1125,8 @@ ${trendCall}
         # Row 4: trend label + sparkline, sized to whatever's left of the
         # 176px height after the rows above
         draw.text((8, 94), f'48h trend ({entry["unit"]}):', font=font_small, fill=0)
-        draw_sparkline(draw, entry["history"], x=8, y=108, width=w - 16, height=h - 116)
+        history_values = [v for _, v in entry["history"]]  # plain values for the plot
+        draw_sparkline(draw, history_values, x=8, y=108, width=w - 16, height=h - 116)
 
 ${rotateLine}
     buf = epd.getbuffer(image)
