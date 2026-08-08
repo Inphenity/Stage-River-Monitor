@@ -1762,13 +1762,48 @@ echo "Done. Check ~/river_display/log.txt if the display doesn't update as expec
   syncAlwaysOn();
 
   $('copyBtn').addEventListener('click', async () => {
-    try {
-      await navigator.clipboard.writeText($('scriptBlock').textContent);
+    const text = $('scriptBlock').textContent;
+    const showCopied = () => {
       const flag = $('copiedFlag');
       flag.classList.add('show');
       setTimeout(() => flag.classList.remove('show'), 1600);
+    };
+    // Try the modern Clipboard API first.
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text);
+        showCopied();
+        return;
+      }
     } catch (e) {
-      alert('Could not copy automatically — select the text manually instead.');
+      // fall through to the legacy method below
+    }
+    // Fallback: select-and-copy via a temporary textarea. Doesn't need
+    // clipboard permissions, so it works even when the Clipboard API is
+    // blocked by the browser, an extension, or a corporate policy, or
+    // when the page isn't served over https.
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.left = '-9999px';
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      const ok = document.execCommand('copy');
+      document.body.removeChild(ta);
+      if (ok) { showCopied(); return; }
+      throw new Error('execCommand copy returned false');
+    } catch (e2) {
+      // Last resort: select the visible script block so the person can
+      // copy it themselves with Ctrl+C / Cmd+C.
+      const block = $('scriptBlock');
+      const range = document.createRange();
+      range.selectNodeContents(block);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+      alert('Your browser blocked automatic copying. The script below is now selected — press Ctrl+C (or Cmd+C on Mac) to copy it.');
     }
   });
 
