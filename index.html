@@ -1184,7 +1184,7 @@ ${rotateLine}
     buf = epd.getbuffer(image)
     epd.init()
     if full_refresh:
-        epd.Clear(0xFF)
+        epd.Clear(${opts.panel27Variant === 'v1' ? '0xFF' : ''})
         epd.display(buf)
     else:
         epd.displayPartial(buf)
