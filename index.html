@@ -1151,12 +1151,11 @@ def render(button_num, full_refresh=True):
         draw.text((8, 8), "No data yet", font=font_title, fill=0)
         draw.text((8, h // 2 - 6), f"Button {button_num} is not configured", font=font_small, fill=0)
     else:
-        # Row 1: label (left) + render timestamp (right-aligned, so it never
-        # collides with a long label regardless of font metrics)
+        # Row 1: label only. Used to also carry the "Updated H:MM" render
+        # timestamp right-aligned here, but a long label (e.g. "Saluda @
+        # The Dam") could run right up against it - moved to Row 3 below,
+        # across from the reading's own "as of" timestamp instead.
         draw.text((8, 4), entry["label"], font=font_title, fill=0)
-        refresh_str = datetime.now().strftime("Updated %I:%M %p")
-        refresh_w = draw.textlength(refresh_str, font=font_small)
-        draw.text((w - 8 - refresh_w, 6), refresh_str, font=font_small, fill=0)
 
         # Row 2: the big reading. Trend arrow (if enabled) is placed
         # dynamically just past the end of this text via textlength, and
@@ -1167,12 +1166,17 @@ def render(button_num, full_refresh=True):
         draw.text((8, 26), value_text, font=font_body, fill=0)
 ${trendCall}
 
-        # Row 3: the reading's own timestamp - on its own line below the
-        # number rather than beside it, so it can't overlap a wide value.
+        # Row 3: the reading's own timestamp (left) + when this screen was
+        # last rendered (right-aligned, so it never collides regardless of
+        # font metrics) - on its own line below the number rather than
+        # beside it, so it can't overlap a wide value.
         # (font_body=40 digits run ~40-44px tall from a y=26 baseline, so
         # this row starts with a deliberate few-pixel buffer below that.)
         ts_full = format_timestamp(entry["time"])
         draw.text((8, 76), f"as of {ts_full}", font=font_small, fill=0)
+        refresh_str = datetime.now().strftime("Updated %I:%M %p")
+        refresh_w = draw.textlength(refresh_str, font=font_small)
+        draw.text((w - 8 - refresh_w, 76), refresh_str, font=font_small, fill=0)
 
         # Row 4: trend label + sparkline, sized to whatever's left of the
         # 176px height after the rows above
