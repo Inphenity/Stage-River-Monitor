@@ -377,6 +377,30 @@ footer{ text-align:center; color: var(--ink-muted); font-family: var(--mono); fo
         </div>
       </div>
 
+      <div class="panel" style="margin-top:20px;">
+        <div class="panel-head"><span>06 — Battery / button (optional)</span></div>
+        <div class="panel-body">
+          <div class="field">
+            <div class="field-label">PiSugar model</div>
+            <select id="pisugarModel">
+              <option value="none">None / not using a PiSugar</option>
+              <option value="s">PiSugar S / PiSugar S Plus</option>
+              <option value="server">PiSugar 2 / 2 Pro / 3 series</option>
+            </select>
+            <div class="field-hint" id="pisugarHint">Wires up the PiSugar's own onboard button — separate from any e-paper HAT buttons above — so pressing it forces a live refresh instead of waiting for the next scheduled update.</div>
+          </div>
+          <div class="field" id="pisugarClickTypeField" style="display:none;">
+            <div class="field-label">Click type to bind</div>
+            <select id="pisugarClickType">
+              <option value="single">Single click</option>
+              <option value="double" selected>Double click</option>
+              <option value="long">Long press</option>
+            </select>
+            <div class="field-hint">PiSugar's own server manages single/double/long presses and often reserves one (commonly long-press) for shutdown by default — pick whichever type isn't already bound to something else in the PiSugar dashboard at :8421.</div>
+          </div>
+        </div>
+      </div>
+
     </div>
 
     <!-- DEVICE PREVIEW COLUMN -->
@@ -413,7 +437,7 @@ footer{ text-align:center; color: var(--ink-muted); font-family: var(--mono); fo
   <!-- SCRIPT OUTPUT -->
   <div class="panel script-panel">
     <div class="panel-head">
-      <span>06 — Generated install script</span>
+      <span>07 — Generated install script</span>
       <div class="script-actions">
         <span class="copied-flag" id="copiedFlag">copied</span>
         <button class="copy-btn" id="copyBtn">Copy script</button>
@@ -699,7 +723,7 @@ def draw_trend_arrow(draw, trend, x, y, size=14):
     const refreshLogic = opts.fullRefreshOnly
       ? `    do_full_refresh = True  # full refresh every run - avoids ghosting`
       : `    run_count = get_run_count()
-    do_full_refresh = (run_count % FULL_REFRESH_EVERY == 0)`;
+    do_full_refresh = "--full" in sys.argv or (run_count % FULL_REFRESH_EVERY == 0)`;
 
     const saveCountLine = opts.fullRefreshOnly ? '' : `
     save_run_count(run_count + 1)`;
@@ -985,6 +1009,10 @@ POLL_SECONDS = 0.05
 HOLD_SECONDS = 1.2   # how long a button must be held to force a live refresh
 DEBOUNCE_SECONDS = 0.05  # settle time after release, for switch bounce
 STATE_FILE = os.path.expanduser("~/.river_display_state")
+# Touched by an external trigger (e.g. a PiSugar button watcher) to force
+# a refresh of whichever gauge is currently displayed, without needing to
+# signal this running process directly - see force_refresh_worker() below.
+FORCE_REFRESH_FILE = os.path.expanduser("~/river_display/.force_refresh")
 FONT_PATH_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 FONT_PATH_REG = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
 
@@ -1197,6 +1225,22 @@ def scheduler_worker():
             render(current_button, full_refresh=True)
         time.sleep(20)
 
+def force_refresh_worker():
+    """Watches for FORCE_REFRESH_FILE and, when it appears, refreshes and
+    redraws whichever gauge is currently on screen. Lets an external
+    process (a PiSugar button watcher, or pisugar-server via a bound
+    click command) trigger a live refresh without talking to this
+    already-running service directly - it just needs to touch a file."""
+    while True:
+        if os.path.exists(FORCE_REFRESH_FILE):
+            try:
+                os.remove(FORCE_REFRESH_FILE)
+            except OSError:
+                pass
+            refresh_gauge(current_button)
+            render(current_button, full_refresh=True)
+        time.sleep(2)
+
 def wait_for_network_and_refresh():
     """
     Forces a fetch + redraw at startup, retrying with backoff until at
@@ -1226,10 +1270,194 @@ def main():
     wait_for_network_and_refresh()
     render(current_button, full_refresh=True)
     threading.Thread(target=scheduler_worker, daemon=True).start()
+    threading.Thread(target=force_refresh_worker, daemon=True).start()
     button_worker()  # runs forever on the main thread
 
 if __name__ == "__main__":
     main()
+`;
+  }
+
+  // ==================================================================
+  // PISUGAR BUTTON SETUP (appended into the install script when enabled)
+  // ==================================================================
+  function buildPiSugarBlock(opts){
+    if (opts.pisugarModel === 'none') return '';
+    const isMulti = opts.displayHardware === '2.7';
+
+    // What "refresh" and "full refresh" actually mean depends on hardware
+    // mode: single-gauge re-runs the whole script (which always fetches
+    // live); multi-gauge is a long-running service, so we just drop a
+    // trigger file it's already watching (see FORCE_REFRESH_FILE /ps
+    // force_refresh_worker() in the generated multi-gauge script).
+    const refreshPy = isMulti
+      ? `["/usr/bin/touch", os.path.expanduser("~/river_display/.force_refresh")]`
+      : `["/usr/bin/python3", os.path.expanduser("~/river_display/river_display.py")]`;
+    const fullRefreshPy = isMulti
+      ? refreshPy
+      : `["/usr/bin/python3", os.path.expanduser("~/river_display/river_display.py"), "--full"]`;
+    const refreshShell = isMulti
+      ? `touch " + os.path.expanduser("~/river_display/.force_refresh")`
+      : `/usr/bin/python3 " + os.path.expanduser("~/river_display/river_display.py")`;
+
+    if (opts.pisugarModel === 's'){
+      const gpioScript = `#!/usr/bin/env python3
+"""
+STAGE button watcher for PiSugar S / PiSugar S Plus.
+
+These boards don't run pisugar-server (no I2C data support), so there's
+no daemon reporting button presses. Pressing the button instead pulls
+GPIO BCM3 (physical pin 5 -- the I2C clock/SCL line) low, and this
+script watches that pin directly.
+
+  Short press -> force a live refresh
+  Long press  -> force a FULL refresh (clears e-paper ghosting)
+
+Note: PiSugar's own docs say this GPIO button function conflicts with
+the Pi's I2C interface -- make sure I2C is disabled in raspi-config
+(off by default) or this pin read may behave oddly.
+"""
+import os
+import subprocess
+import sys
+from signal import pause
+from gpiozero import Button
+
+BUTTON_PIN = 3
+HOLD_TIME = 1.5
+REFRESH_CMD = ${refreshPy}
+FULL_REFRESH_CMD = ${fullRefreshPy}
+
+button = Button(BUTTON_PIN, pull_up=True, hold_time=HOLD_TIME)
+_long_press_fired = False
+
+def run(cmd, label):
+    print(f"[pisugar-button] {label}: {' '.join(cmd)}", flush=True)
+    try:
+        subprocess.run(cmd, check=True)
+    except Exception as e:
+        print(f"[pisugar-button] {label} failed: {e}", file=sys.stderr, flush=True)
+
+def on_held():
+    global _long_press_fired
+    _long_press_fired = True
+    run(FULL_REFRESH_CMD, "long press -> full refresh")
+
+def on_released():
+    global _long_press_fired
+    if not _long_press_fired:
+        run(REFRESH_CMD, "short press -> refresh")
+    _long_press_fired = False
+
+button.when_held = on_held
+button.when_released = on_released
+print(f"[pisugar-button] watching BCM{BUTTON_PIN} (hold >= {HOLD_TIME}s = long press)", flush=True)
+pause()
+`;
+
+      return `
+# ---- PiSugar S/S Plus button ----
+sudo apt-get install -y python3-gpiozero
+sudo raspi-config nonint do_i2c 1   # keep I2C disabled - it conflicts with the PiSugar S button read
+
+cat > ~/river_display/pisugar_button.py << 'PYEOF'
+${gpioScript}PYEOF
+chmod +x ~/river_display/pisugar_button.py
+
+sudo tee /etc/systemd/system/pisugar-button.service > /dev/null << SERVICEEOF
+[Unit]
+Description=PiSugar S/S Plus button watcher (STAGE)
+After=multi-user.target
+
+[Service]
+Type=simple
+User=$(whoami)
+ExecStart=/usr/bin/python3 /home/$(whoami)/river_display/pisugar_button.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+SERVICEEOF
+
+sudo systemctl daemon-reload
+sudo systemctl enable pisugar-button.service
+sudo systemctl restart pisugar-button.service
+echo "PiSugar button watcher installed. journalctl -u pisugar-button -f to confirm it sees presses."
+`;
+    }
+
+    // ---- server-based models (2 / 2 Pro / 3 series), via pisugar-server ----
+    const setupScript = `#!/usr/bin/env python3
+"""
+STAGE button setup for PiSugar 2 / 2 Pro / 3 series (any model running
+pisugar-server). These report clicks through pisugar-server itself over
+a local unix socket, so instead of watching a pin ourselves, we just
+tell pisugar-server which command to run for a given click type.
+
+Safe to re-run - it just re-applies the same two settings each time.
+"""
+import os
+import socket
+import sys
+
+SOCKET_PATH = "/tmp/pisugar-server.sock"
+CLICK_TYPE = "${opts.pisugarClickType}"
+REFRESH_CMD = "${refreshShell}"
+
+def send(sock, command):
+    sock.sendall((command + "\\n").encode())
+    reply = sock.recv(4096).decode().strip()
+    print(f"> {command}\\n< {reply}")
+
+def main():
+    try:
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
+            sock.connect(SOCKET_PATH)
+            send(sock, f"set_button_shell {CLICK_TYPE} {REFRESH_CMD}")
+            send(sock, f"set_button_enable {CLICK_TYPE} 1")
+    except FileNotFoundError:
+        print(f"Could not find {SOCKET_PATH} -- is pisugar-server installed and running?", file=sys.stderr)
+        sys.exit(1)
+    except ConnectionRefusedError:
+        print("pisugar-server socket refused the connection -- is the service running?", file=sys.stderr)
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main()
+`;
+
+    return `
+# ---- PiSugar 2/2 Pro/3 series button (via pisugar-server) ----
+if ! systemctl list-unit-files 2>/dev/null | grep -q '^pisugar-server'; then
+  echo "NOTE: pisugar-server doesn't appear to be installed yet."
+  echo "Install it first, then re-run this script (or just python3 ~/river_display/pisugar_button_setup.py):"
+  echo "  curl https://cdn.pisugar.com/release/pisugar-power-manager.sh | sudo bash"
+fi
+
+cat > ~/river_display/pisugar_button_setup.py << 'PYEOF'
+${setupScript}PYEOF
+chmod +x ~/river_display/pisugar_button_setup.py
+
+sudo tee /etc/systemd/system/pisugar-button-setup.service > /dev/null << SERVICEEOF
+[Unit]
+Description=Bind STAGE refresh command to PiSugar button (STAGE)
+After=pisugar-server.service
+Requires=pisugar-server.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /home/$(whoami)/river_display/pisugar_button_setup.py
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+SERVICEEOF
+
+sudo systemctl daemon-reload
+sudo systemctl enable pisugar-button-setup.service
+sudo systemctl restart pisugar-button-setup.service || python3 ~/river_display/pisugar_button_setup.py || true
+echo "PiSugar button bound to a ${opts.pisugarClickType} click. Check http://$(hostname -I | awk '{print $1}'):8421 to confirm."
 `;
   }
 
@@ -1395,6 +1623,8 @@ echo "Done. Check ~/river_display/log.txt if the display doesn't update as expec
       hourEnd: alwaysOn ? '24' : hourEnd.value,
       hdmiOff: $('hdmiOff').checked,
       wifiOff: alwaysOn ? false : $('wifiOff').checked,
+      pisugarModel: $('pisugarModel').value,
+      pisugarClickType: $('pisugarClickType').value,
     };
   }
 
@@ -1447,6 +1677,9 @@ echo "Done. Check ~/river_display/log.txt if the display doesn't update as expec
       ['Trend arrow', opts.trendArrow ? 'on' : 'off'],
       ['Ghost-free mode', opts.fullRefreshOnly ? 'on' : 'off'],
       ['WiFi curfew', opts.wifiOff ? 'on' : 'off'],
+      ['PiSugar button', opts.pisugarModel === 'none' ? 'not configured'
+        : opts.pisugarModel === 's' ? 'PiSugar S/S Plus (GPIO watcher)'
+        : `PiSugar 2/2 Pro/3 (${opts.pisugarClickType}-click)`],
     );
     $('specList').innerHTML = rows.map(([k,v]) => `<div><span>${k}</span><span>${v}</span></div>`).join('');
   }
@@ -1489,6 +1722,25 @@ echo "Done. Check ~/river_display/log.txt if the display doesn't update as expec
     $(id).addEventListener('input', render);
     $(id).addEventListener('change', render);
   });
+
+  // ---- PiSugar button: show the click-type picker only for server-based models ----
+  const pisugarModelEl = $('pisugarModel');
+  const pisugarClickTypeField = $('pisugarClickTypeField');
+  const pisugarHint = $('pisugarHint');
+  function syncPisugarFields(){
+    const val = pisugarModelEl.value;
+    pisugarClickTypeField.style.display = (val === 'server') ? '' : 'none';
+    if (val === 's'){
+      pisugarHint.textContent = "PiSugar S/S Plus don't run pisugar-server — this installs a small watcher that reads the button's GPIO pin directly. A short press forces a refresh; holding it forces a full (ghost-clearing) refresh.";
+    } else if (val === 'server'){
+      pisugarHint.textContent = "This model runs pisugar-server, which already tracks button clicks — we just bind the click type below to a refresh command instead of watching the pin ourselves.";
+    } else {
+      pisugarHint.textContent = "Wires up the PiSugar's own onboard button — separate from any e-paper HAT buttons above — so pressing it forces a live refresh instead of waiting for the next scheduled update.";
+    }
+  }
+  pisugarModelEl.addEventListener('change', () => { syncPisugarFields(); render(); });
+  $('pisugarClickType').addEventListener('change', render);
+  syncPisugarFields();
   hourStart.addEventListener('change', render);
   hourEnd.addEventListener('change', render);
 
