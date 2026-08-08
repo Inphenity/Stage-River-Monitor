@@ -250,6 +250,14 @@ footer{ text-align:center; color: var(--ink-muted); font-family: var(--mono); fo
                 <div class="hw-tag">Multi-gauge</div>
               </label>
             </div>
+            <div class="field" id="panel27VariantField" style="display:none; margin-top:12px;">
+              <div class="field-label">2.7" board revision</div>
+              <select id="panel27Variant">
+                <option value="v2" selected>V2 (current — Rev2.1 and later, what's currently shipping)</option>
+                <option value="v1">V1 (older/legacy stock only)</option>
+              </select>
+              <div class="field-hint">Check the back of your board — Waveshare labels the version there. If you're not sure, V2 is almost certainly correct for anything bought recently; picking the wrong one won't error, it'll just leave the panel blank with no indication why.</div>
+            </div>
           </div>
         </div>
       </div>
@@ -610,10 +618,12 @@ footer{ text-align:center; color: var(--ink-muted); font-family: var(--mono); fo
     Object.entries(hwCards).forEach(([v, card]) => card.classList.toggle('selected', v === val));
     $('stationSinglePanel').style.display = (val === '2.13') ? '' : 'none';
     $('gaugesMultiPanel').style.display = (val === '2.7') ? '' : 'none';
+    $('panel27VariantField').style.display = (val === '2.7') ? '' : 'none';
   }
   document.querySelectorAll('input[name="displayHardware"]').forEach(r => {
     r.addEventListener('change', () => { syncHwCards(); render(); });
   });
+  $('panel27Variant').addEventListener('change', render);
 
   // ---- Gauge rows (multi-button mode, 4 fixed slots) ----
   const gaugeRowsEl = $('gaugeRows');
@@ -960,6 +970,7 @@ def draw_trend_arrow(draw, trend, x, y, size=14):
     const rotateLine = opts.flip180 ? `
     image = image.rotate(180)` : '';
 
+    const epdModule = opts.panel27Variant === 'v1' ? 'epd2in7' : 'epd2in7_V2';
     return `#!/usr/bin/env python3
 """
 Multi-Gauge USGS River Display for Waveshare 2.7" e-Paper HAT (264x176)
@@ -971,6 +982,19 @@ gauge on demand). Also does a forced fetch + redraw at startup, once
 it can actually reach the network - see wait_for_network_and_refresh()
 below - so a power-on always shows current data rather than waiting
 for the next scheduled refresh.
+
+Driver: waveshare_epd.${epdModule} -- selected from the "2.7\\" board
+revision" option in the configurator. Waveshare's 2.7" HAT has two
+hardware generations with different init/LUT behavior; picking the
+wrong one won't raise an error, it'll just leave the panel blank with
+no indication why. If you're still getting a blank screen after
+confirming this matches your board (check the label on the back), the
+most reliable way to isolate a driver issue from a wiring issue is to
+run Waveshare's own official demo first: clone
+https://github.com/waveshare/e-Paper, then run
+python3 e-Paper/RaspberryPi_JetsonNano/python/examples/epd_2in7_V2_test.py
+(or the non-_V2 script for older stock) - if that renders correctly,
+the hardware/wiring is fine and any remaining issue is in this script.
 
 IMPORTANT - verify the button GPIO pins below before your first run.
 The values here (BCM 5, 6, 13, 19 for KEY1-KEY4) match Waveshare's own
@@ -990,7 +1014,7 @@ import threading
 import requests
 from datetime import datetime, timedelta
 from PIL import Image, ImageDraw, ImageFont
-from waveshare_epd import epd2in7 as epd_driver
+from waveshare_epd import ${epdModule} as epd_driver
 import RPi.GPIO as GPIO
 
 # ---- Button GPIO pins (BCM numbering) - verify against your board ----
@@ -1610,6 +1634,7 @@ echo "Done. Check ~/river_display/log.txt if the display doesn't update as expec
     return {
       wifiNetworks: getWifiNetworks(),
       displayHardware: document.querySelector('input[name="displayHardware"]:checked').value,
+      panel27Variant: $('panel27Variant').value,
       label: $('label').value.trim() || 'River Monitor',
       siteNo: $('siteNo').value.trim() || '00000000',
       measurement: $('measurement').value,
@@ -1658,7 +1683,7 @@ echo "Done. Check ~/river_display/log.txt if the display doesn't update as expec
 
   function updateSpecList(opts){
     const rows = [
-      ['Display', opts.displayHardware === '2.7' ? '2.7" (264×176, 4-button)' : '2.13" (250×122)'],
+      ['Display', opts.displayHardware === '2.7' ? `2.7" (264×176, 4-button, ${opts.panel27Variant === 'v1' ? 'V1/legacy' : 'V2'})` : '2.13" (250×122)'],
     ];
     if (opts.displayHardware === '2.7'){
       if (opts.gauges.length){
