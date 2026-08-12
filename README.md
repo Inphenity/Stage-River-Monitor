@@ -1,115 +1,223 @@
-# STAGE - River Gauge E Paper Display and Configuration Tool
+# STAGE — River Gauge E-Paper Display
 
-STAGE generates a ready-to-paste install script for turning a Raspberry Pi and a small e-paper display into a dedicated, always-on river gauge monitor. Pick your USGS gauge(s), tune a few display options, and get one script that sets up everything — no coding required.
+Turn a Raspberry Pi and a small e-paper display into a dedicated river
+gauge monitor: live discharge or gauge height, a 48-hour trend line, and
+(on the bigger display) multiple gauges you can flip between with a
+button press. Data comes straight from USGS — no signup, no API key.
 
-**Live configurator:** [inphenity.github.io/Stage-River-Monitor](https://inphenity.github.io/Stage-River-Monitor/) — or open `index.html` directly from this repo.
+This guide assumes you've never set up a Raspberry Pi before. By the
+end you'll have a working display on your desk.
 
-## What it builds
+**[→ Open the configurator](https://inphenity.github.io/Stage-River-Monitor/)**
+to generate your install script — you'll come back to that in Step 4.
 
-A small standalone device that:
+---
 
-- Pulls live data — discharge (cfs) or gauge height (ft), your choice — from a USGS gauge, using USGS's free public API (no signup or API key needed)
-- Displays the current reading, a "last updated" timestamp, a rising/falling trend arrow (comparing against the reading from 12 hours ago, so it catches slow drift rather than just short-term noise), and a 48-hour trend graph
-- Refreshes on whatever schedule you set — pick a quick "N times per hour" preset, add fully custom minutes, offset everything by +2 minutes to dodge USGS's publish timing, or skip quiet hours entirely and run 24/7 if it's plugged in rather than on battery
-- Can run on battery power for a portable setup, with power-saving options built in
-- Optionally joins as many additional WiFi networks as you want (home, work, a mobile hotspot, a backup) — note the Pi's radio is 2.4GHz-only, it can't join 5GHz networks
-- **New:** on the 2.7" display, tracks up to 4 gauges at once and switches between them with the onboard buttons
+## What you'll need
 
-## Two display modes
+**Hardware**
+- A Raspberry Pi with a 40-pin GPIO header (a Pi Zero 2 W is a good
+  cheap choice for this; a Pi 3/4/5 works too, just overkill)
+- A micro SD card, 8GB or larger
+- One of:
+  - [Waveshare 2.13" e-Paper HAT](https://www.waveshare.com/2.13inch-e-paper-hat.htm) — single gauge, simplest setup
+  - [Waveshare 2.7" e-Paper HAT](https://www.waveshare.com/2.7inch-e-paper-hat.htm) — up to 4 gauges, switchable with onboard buttons
+- *(Optional)* A [PiSugar](https://www.pisugar.com/) battery HAT, if you want it portable/battery-powered
+- A computer to flash the SD card and to SSH in from
+- A USB power supply (or the PiSugar battery) for the Pi
 
-STAGE now supports two Waveshare e-paper HATs, selected in the configurator:
+**You do NOT need:** a monitor, keyboard, or mouse for the Pi itself.
+Everything below is done "headless," over the network.
 
-| Mode | Display | Gauges | How it runs |
-| ---- | ------- | ------ | ----------- |
-| **Single-gauge (default)** | Waveshare 2.13" e-Paper HAT | 1 | A script invoked on a cron schedule, prints and exits |
-| **Multi-gauge** | Waveshare 2.7" e-Paper HAT (264×176, 4 onboard buttons) | Up to 4, one per button | A `systemd` service that runs continuously — refreshing data on a schedule in the background, and switching the displayed gauge instantly when you press a button |
+---
 
-Pick the one that matches the hardware you have. STAGE generates a completely different install script depending on which you choose — the multi-gauge script installs a background service instead of a cron job, since it needs to be listening for button presses at all times, not just waking up periodically.
+## Step 1 — Flash the SD card
 
-## Parts list
+1. Download and install [Raspberry Pi Imager](https://www.raspberrypi.com/software/) on your computer.
+2. Insert the micro SD card.
+3. Open Raspberry Pi Imager:
+   - **Device**: pick your Pi model
+   - **Operating System**: "Raspberry Pi OS (other)" → **Raspberry Pi OS Lite (64-bit)** — you don't need the desktop version for this
+   - **Storage**: select your SD card
+4. Click the **gear icon** (⚙) in the bottom right — or press `Ctrl+Shift+X` — to open advanced options. This is the important part: it lets you set everything up before the Pi ever boots, so you never need to plug in a monitor.
+   - ✅ Set hostname (e.g. `rivermonitor` — you'll use this to find it later)
+   - ✅ Enable SSH → "Use password authentication"
+   - ✅ Set username and password (remember these!)
+   - ✅ Configure WiFi — enter your network's SSID and password, and set the WiFi country to yours
+   - ✅ Set locale/timezone if you'd like correct timestamps
+5. Save, then click **Write**. This erases the card and writes the OS — confirm when it asks.
+6. When it finishes, move the SD card into the Pi and power it on. First boot takes 1-2 minutes.
 
-| Part                                             | Notes                                                                                                                                                                                                    |
-| ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Raspberry Pi Zero WH, Zero 2 W, or Zero 2 WH** | The "W" means WiFi built in; the "H" means the 40-pin GPIO header comes pre-soldered, which you need for the e-paper HAT to plug in directly (non-H boards need the header soldered on separately). The original Zero W/WH only supports 32-bit OS (its chip is ARMv6). The Zero 2 W/WH supports both 32-bit and 64-bit, and is otherwise a drop-in upgrade — same header layout, same install script — but its quad-core chip draws more power, so expect shorter runtime on the same battery. |
-| **Waveshare 2.13" e-Paper HAT** (single-gauge mode) | Specifically the revision using the `epd2in13_V4` driver. Waveshare has shipped a few hardware revisions (V2/V3/V4) with slightly different driver requirements — check the sticker on the back of your display's PCB against what you actually received. |
-| **Waveshare 2.7" e-Paper HAT** (multi-gauge mode) | 264×176, uses the `epd2in7` driver, with 4 onboard buttons (KEY1-KEY4). Button GPIO pins vary slightly by hardware revision — double-check the schematic on the Waveshare wiki against your board before your first run. |
-| **MicroSD card**                                 | 8GB or larger. Runs Raspberry Pi OS Lite — 32-bit on an original Zero W/WH, either 32-bit or 64-bit on a Zero 2 W/WH. No desktop environment needed, everything here is headless.                        |
-| **Power source**                                 | A standard 5V USB power adapter works fine for a permanent, plugged-in installation.                                                                                                                     |
-| **(Optional) Battery pack**                      | A PiSugar-series battery HAT (S, 2, or 3) lets the whole thing run cordless for several hours per charge. The PiSugar S is the simplest and cheapest option, but has no way to report its own battery level back to the display, and its button (if you want to wire one up for manual refresh) requires a small GPIO polling script rather than a built-in config option. PiSugar 2/3 have an onboard RTC and a proper software API for both battery level and button config, at a higher price point. |
-| **(Optional) Case**                              | Any case that exposes the e-paper display and leaves the micro-USB/USB-C power port accessible works. Not required for a first build.                                                                    |
+> **Pi Zero W/WH/2W/2WH note:** these only have a 2.4GHz WiFi radio. If
+> your network name doesn't show up in the imager's WiFi list, make
+> sure you're entering your router's 2.4GHz network — a lot of routers
+> broadcast both bands under the same name, which can cause silent
+> connection failures on first boot.
 
-## Setting up the Raspberry Pi
+---
 
-If you're starting from a brand-new SD card:
+## Step 2 — Wire up the display (and battery, if using one)
 
-1. Flash **Raspberry Pi OS Lite** onto the microSD card using [Raspberry Pi Imager](https://www.raspberrypi.com/software/) — 32-bit if you're using an original Zero W/WH, either 32-bit or 64-bit if you're using a Zero 2 W/WH. In the Imager's advanced options (gear icon), set a hostname, enable SSH, and set your WiFi network and password so the Pi boots straight onto your network.
-2. Insert the SD card, power on the Pi, and give it a minute or two to boot.
-3. Find its IP address (check your router's device list, or try `ping raspberrypi.local` if your network supports mDNS) and SSH in: `ssh username@<ip-address>`.
-4. **Don't attach the e-paper HAT yet** — install the software first (below), then attach it just before the test run at the end of the install script.
+With the Pi powered **off**, seat the e-paper HAT onto the 40-pin GPIO
+header — it only fits one way, flush against all 40 pins. If you're
+also using a PiSugar, check its instructions for whether it sits
+between the Pi and the HAT or stacks separately — this varies by
+PiSugar model.
 
-## How to use the configurator
+Nothing else to configure here yet — SPI (which the display needs)
+gets enabled by the install script in Step 5.
 
-1. Open the configurator page (`index.html` in this repo, or your GitHub Pages link) in any browser.
-2. Under **Display hardware**, pick your HAT: 2.13" (single gauge) or 2.7" (multi-gauge, 4 buttons).
-3. **If you picked 2.13":** fill in a display label and your USGS gauge's site number — find yours at [waterdata.usgs.gov/nwis/rt](https://waterdata.usgs.gov/nwis/rt); it's the number in the gauge's URL. Pick discharge (cfs) or gauge height (ft) — not every gauge reports both, so check your specific gauge's page first.
-4. **If you picked 2.7":** fill in the **Gauges & button mapping** section instead — one row per button, each with its own label, USGS site number, and measurement. Leave a button's site number blank to leave it unused.
-5. Adjust the toggles for trend arrow, display orientation, and power-saving options to fit your setup. For the refresh schedule, either click one of the "refreshes per hour" quick-set buttons (which fills in evenly spaced minutes for you) or build your own list by adding individual minutes — each is removable, and there's a "+2 minute" offset toggle if you want refreshes to land a couple minutes after the schedule shown, to dodge USGS's own publish timing. Set active hours, or check **Run 24/7** to skip quiet hours entirely (only worth it if the Pi's plugged into wall power — it'll drain a battery noticeably faster). The live preview panel updates as you go.
-6. If needed, use **+ Add WiFi network** to have the script join one or more additional networks (only necessary if the Pi doesn't already have working WiFi, or you want to add a secondary network like a work WiFi or mobile hotspot) — add as many as you want, each with its own SSID and password. Remember the Pi's WiFi radio is 2.4GHz-only, so a 5GHz-only network won't be visible to it.
-7. Copy the generated script with the **Copy script** button.
-8. Paste it into your SSH session on the Pi and press enter.
-   - **2.13" mode:** it installs dependencies, pulls the Waveshare e-paper library, writes the display script, and sets up the cron schedule — all in one go.
-   - **2.7" mode:** it does the same, but instead of a cron job it installs and starts a `systemd` service (`river-display.service`) that runs continuously in the background.
-9. If this is the first time enabling SPI on this Pi, reboot once (`sudo reboot`) after the script finishes.
-10. Attach the e-paper HAT to the Pi's 40-pin header now, if you haven't already — it only fits one way.
-11. **2.13" mode:** re-run the test manually to confirm the display updates: `python3 ~/river_display/river_display.py`
-    **2.7" mode:** confirm the service is running (`sudo systemctl status river-display`), then press each configured button and confirm the display switches to that gauge.
+---
 
-## Attaching the e-paper HAT
+## Step 3 — Find the Pi and SSH in
 
-There's no wiring to do — the HAT plugs directly onto the Pi's 40-pin GPIO header and communicates over SPI. Line up the header carefully (it only fits one orientation) and press down evenly on all four corners to make sure every pin makes contact. A HAT that isn't fully seated is one of the most common causes of a "nothing happens" first run.
+Give the Pi about a minute after powering on, then from your computer:
 
-## Multi-gauge mode (2.7" HAT)
+```
+ssh <username>@<hostname>.local
+```
 
-Each of the 4 onboard buttons is wired to its own gauge. A **short press** switches to that gauge and redraws instantly from whatever's already cached — no network call, no delay. **Press and hold** a button (about 1.2 seconds) to force a live USGS fetch for that gauge on demand, in addition to the background service's normal scheduled refresh (same minute/active-hours settings as single-gauge mode). If a forced fetch fails — a dropped connection, a slow USGS response — the display falls back to the last successfully cached reading for that gauge instead of showing an error or blank screen.
+using the username and hostname you set in Step 1 (e.g. `ssh
+pat@rivermonitor.local`). Type `yes` if asked about the host's
+fingerprint, then enter the password you set.
 
-The service also forces a fetch and redraw once at startup — but rather than firing immediately (which can race a Pi Zero's WiFi still associating right after boot), it retries with backoff until at least one configured gauge actually succeeds, so power-on reliably shows current data instead of possibly sitting on "No data yet" until the next scheduled refresh. The single-gauge (2.13") install adds an equivalent `@reboot` cron entry with its own short retry loop, since that path is a one-shot script rather than a persistent service.
+**If that doesn't connect:**
+- Double check the Pi has power and its green LED is flickering (that means it's alive and working)
+- Try `ping rivermonitor.local` — if that fails, `.local` (mDNS) discovery may not work on your network; instead check your router's admin page for a device named after your hostname and use its IP directly: `ssh <username>@<that-ip-address>`
+- Give it another minute — first boot does some one-time setup
 
-If you're holding a button repeatedly for testing, keep in mind each hold is its own request to USGS's public API — reasonable for normal use, but avoid scripting rapid repeated holds as a matter of general courtesy to a free public service.
+Once connected, you're looking at a normal command-line prompt on the
+Pi itself. Everything from here happens in this window.
 
-**Button GPIO pins (BCM numbering):**
+### Using Windows? Here's the PowerShell version
 
-| Button | GPIO (BCM) |
-| ------ | ---------- |
-| KEY1   | 5          |
-| KEY2   | 6          |
-| KEY3   | 13         |
-| KEY4   | 19         |
+Modern Windows (10 and 11) ships with SSH built into PowerShell — no
+extra software needed.
 
-These match Waveshare's own 2.7" demo scripts, but Waveshare has changed pinouts across hardware revisions before — cross-check against the schematic on [waveshare.com/wiki/2.7inch_e-Paper_HAT](https://www.waveshare.com/wiki/2.7inch_e-Paper_HAT) for your specific board before relying on them.
+1. Open **PowerShell** (search for it in the Start menu — the regular blue one, not "PowerShell ISE").
+2. Run the same command as above:
+   ```
+   ssh <username>@<hostname>.local
+   ```
+3. First connection only: PowerShell will ask something like
+   `Are you sure you want to continue connecting (yes/no/[fingerprint])?`
+   — type `yes` and press Enter.
+4. Enter the password you set in Raspberry Pi Imager. **Nothing will
+   appear on screen while you type** — no dots, no cursor movement —
+   that's normal password-entry behavior in a terminal, not a stuck
+   window. Just type it and press Enter.
 
-**Why it's a service instead of a cron job:** the single-gauge script only needs to wake up, draw, and exit — cron handles that fine. Multi-gauge mode needs to react to a button press at any moment, which means something has to be running continuously to watch the GPIO pins. STAGE handles this by generating a `systemd` service (`river-display.service`) instead of a cron entry, so it starts on boot and restarts automatically if it ever crashes.
+**If PowerShell says `ssh` isn't recognized as a command:** you're on
+an older Windows build without OpenSSH included. Go to
+**Settings → Apps → Optional Features → Add a feature**, search for
+**OpenSSH Client**, install it, then close and reopen PowerShell and
+try again.
 
-**Button reading uses polling, not interrupts:** newer Raspberry Pi OS releases (Debian 13 "Trixie" and later) have moved away from the legacy GPIO interface that `RPi.GPIO`'s interrupt-based edge detection (`add_event_detect`) depends on — the same underlying issue noted in Troubleshooting below for a single manual-refresh button. The generated multi-gauge script sidesteps this by polling the button pins in a tight loop instead, which is more CPU-active but works reliably across OS versions.
+**If `<hostname>.local` doesn't resolve:** Windows' support for `.local`
+(mDNS) hostnames can be inconsistent depending on version. Fall back to
+finding the Pi's IP address from your router's admin page (look for
+the hostname you set) and connect with that instead:
+```
+ssh <username>@<that-ip-address>
+```
+
+---
+
+## Step 4 — Generate your install script
+
+Open the **[STAGE configurator](https://inphenity.github.io/Stage-River-Monitor/)**
+in a browser on your computer (not the Pi). It's laid out as a numbered
+sequence of sections — work through them top to bottom:
+
+- **00 — Network** — skip this if the Pi's already on WiFi (it is, from Step 1). Only add networks here if you want the Pi to *also* be able to join others.
+- **01 — Display hardware** — pick your HAT (2.13" or 2.7"), and for the 2.7" confirm the board revision printed on the back (V1 vs V2) — picking the wrong one leaves the panel blank with no error.
+- **02 — Station / Gauges** — find your river's USGS site number at [waterdata.usgs.gov/nwis/rt](https://waterdata.usgs.gov/nwis/rt/) (it's the number in that gauge's URL), then choose discharge or gauge height — check your site's page for which one it actually publishes.
+- **03 — Display behavior** — defaults are sensible; adjust as you like.
+- **04 — Schedule** — set your refresh interval here. Worth turning on "Offset refresh by +2 minutes" — it runs the fetch 2 minutes after each scheduled time instead of exactly on it, which avoids a race if USGS happens to publish its update right at the top of the interval, so your fetch doesn't just miss it.
+- **05 — Power saving** — defaults are sensible; adjust as you like.
+- **06 — Battery / button** — if you're using a PiSugar, pick your model here so the install script also wires up its button.
+- **07 — Generated install script** — scroll down and click **Copy script**.
+
+---
+
+## Step 5 — Run the script
+
+Back in your SSH window from Step 3, paste the copied script and press
+Enter. It will:
+
+- Install everything it needs (this takes a few minutes on a Pi Zero)
+- Pull in the Waveshare e-paper library
+- Write your display script
+- Run a quick test — watch the display, it should update
+- Set up either a cron schedule (2.13") or a background service (2.7") so it keeps refreshing on its own
+- If you picked a PiSugar model, install and start its button watcher too
+
+**If this is the very first time SPI has been enabled on this Pi**,
+reboot once so it takes effect, then check the display again:
+
+```
+sudo reboot
+```
+
+(wait ~30 seconds, then `ssh` back in — no need to re-run the script)
+
+---
+
+## You're done
+
+The display now updates on its own schedule. A few useful commands
+going forward, all run over SSH:
+
+```
+# Single-gauge (2.13") — check the log
+cat ~/river_display/log.txt
+
+# Multi-gauge (2.7") — check service status and recent logs
+sudo systemctl status river-display
+journalctl -u river-display -f
+
+# PiSugar button (if configured) — confirm it's seeing presses
+journalctl -u pisugar-button -f              # PiSugar S / S Plus
+journalctl -u pisugar-button-setup           # PiSugar 2/2 Pro/3 series
+```
+
+---
 
 ## Troubleshooting
 
-- **Display doesn't update:** check `~/river_display/log.txt` on the Pi first — the script logs any error there instead of failing silently.
-- **`ModuleNotFoundError: No module named 'waveshare_epd'`:** the Waveshare library clone didn't complete. Run `rm -rf ~/river_display/e-Paper` and re-run the install script.
-- **Ghosting (faint traces of the old reading left on screen):** the display defaults to a full refresh every update to avoid this, at the cost of a brief flash each time. This is a known trait of e-paper, not a bug.
-- **`RuntimeError: Failed to add edge detection` (only relevant if you wire up a manual refresh button):** newer Raspberry Pi OS releases (Debian 13 "Trixie" and later) have moved away from the legacy GPIO interface that `RPi.GPIO`'s interrupt-based edge detection depends on. A simple polling loop works around this reliably.
-- **Occasional `Temporary failure in name resolution` errors:** this is a DNS/network hiccup, not a USGS problem — usually transient. If it happens right after a scheduled WiFi reconnect, add a few minutes' buffer between when WiFi comes back and when the first refresh of the day is scheduled.
-- **The reading only changes once an hour despite refreshing more often:** this is normal for some gauges. USGS gauges often *measure* every 15 minutes but only *transmit* to USGS's servers on an hourly basis — refreshing more frequently than that won't get you anything newer.
+**Display stays blank / never updates after the script finishes**
+Enabling SPI for the first time needs a reboot (`sudo reboot`) — this
+is the most common cause. After rebooting, re-run the test manually to
+see any error output directly:
+```
+cd ~/river_display && python3 river_display.py
+```
 
-**Multi-gauge mode (2.7") specific:**
+**"No data yet" / "network error" in the log**
+Usually a wrong USGS site number, or a site that doesn't publish the
+measurement you picked (discharge vs. gauge height) — double check on
+the site's own page at waterdata.usgs.gov.
 
-- **A button press doesn't switch gauges:** first confirm that button's site number was actually filled in during configuration — an unmapped button intentionally does nothing. If it was configured, check `~/river_display/log.txt`, then verify the GPIO pin for that button against your board's schematic — see the pin table above.
-- **Display doesn't come back after a reboot:** check the service status with `sudo systemctl status river-display`. If it shows as failed, `journalctl -u river-display -n 50` will show the most recent errors.
-- **A button shows "not configured":** that button's site number field was left blank in STAGE. Re-run the configurator with that row filled in and re-paste the install script.
-- **Buttons feel unresponsive or laggy:** a short press should feel instant (it's reading straight from cache). A pause is expected on a *hold*, since that's a live network fetch, not a bug. If a hold is consistently slow (multiple seconds) or fails outright, check `~/river_display/log.txt` for `network/API error` entries.
+**Can't SSH in at all**
+See the troubleshooting notes at the end of Step 3 — it's almost
+always either the Pi not being fully booted yet, or `.local` discovery
+not working on your particular network/router.
 
-## Notes
+**2.7" HAT buttons don't switch gauges**
+Check `sudo systemctl status river-display` — if the service isn't
+running, `journalctl -u river-display -n 50` will show why. Also
+confirm you actually filled in a site number for that button's gauge
+slot in the configurator — an empty one is left unmapped on purpose.
 
-- USGS real-time data is **provisional** — it hasn't gone through USGS's quality-review process yet. This is normal for real-time data and applies to every reading this project displays.
-- The single-gauge path was built and tested against Raspberry Pi OS Lite (Trixie/Debian 13, 32-bit) on a Pi Zero WH with a Waveshare 2.13" V4 display. A Pi Zero 2 W/WH running the 64-bit build of the same OS should work identically — everything this project uses (Python, PIL, `requests`, `RPi.GPIO`, `spidev`, the Waveshare library) has 64-bit ARM builds available — but this specific combination hasn't been directly verified.
-- The multi-gauge path (2.7" HAT, button mapping, systemd service) is new and has not yet been verified on hardware — it's generated from the same tested USGS-fetch and e-paper-drawing logic as the single-gauge path, but the button-polling and service wiring are new additions.
-- The configurator runs entirely in your browser — nothing you type into it (site numbers, WiFi passwords, anything) is sent anywhere or stored by the tool itself. If you save a copy of your own generated script somewhere for backup, keep it private rather than committing it to a public repo, since it may contain a real WiFi password in plain text.
+**PiSugar button does nothing**
+Depends on your model:
+- **PiSugar S / S Plus**: check `sudo systemctl status pisugar-button` — if the service isn't running, `journalctl -u pisugar-button -n 50` will show why. Also make sure I2C is disabled in `sudo raspi-config` (Interface Options → I2C) — PiSugar's own docs note this button function conflicts with I2C being enabled.
+- **PiSugar 2 / 2 Pro / 3 series**: this depends on `pisugar-server` already being installed (the configurator's script doesn't install it, only binds to it). Check with `sudo systemctl status pisugar-server` — if it's missing, install it first with `curl https://cdn.pisugar.com/release/pisugar-power-manager.sh | sudo bash`, then re-run `python3 ~/river_display/pisugar_button_setup.py`.
+
+**WiFi looks connected in `raspi-config` but the Pi never comes online**
+Almost always a 2.4GHz vs. 5GHz mismatch — see the note at the end of
+Step 1.
+
+---
+
+*USGS Instantaneous Values API · Waveshare e-Paper · No signup, no key required*
