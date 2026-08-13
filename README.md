@@ -4,6 +4,9 @@ Turn a Raspberry Pi and a small e-paper display into a dedicated river
 gauge monitor: live discharge or gauge height, a 48-hour trend line, and
 (on the bigger display) multiple gauges you can flip between with a
 button press. Data comes straight from USGS — no signup, no API key.
+Once it's running, you can change the gauge anytime from a browser — no
+SSH required — and the display itself shows the last 3 digits of the
+Pi's IP so it's easy to find on your network.
 
 This guide assumes you've never set up a Raspberry Pi before. By the
 end you'll have a working display on your desk.
@@ -150,6 +153,7 @@ Enter. It will:
 - Write your display script
 - Run a quick test — watch the display, it should update
 - Set up either a cron schedule (2.13") or a background service (2.7") so it keeps refreshing on its own
+- Start a small web config page on port 8080, so you can change the gauge later without SSHing back in
 - If you picked a PiSugar model, install and start its button watcher too
 
 **If this is the very first time SPI has been enabled on this Pi**,
@@ -180,6 +184,31 @@ journalctl -u river-display -f
 journalctl -u pisugar-button -f              # PiSugar S / S Plus
 journalctl -u pisugar-button-setup           # PiSugar 2/2 Pro/3 series
 ```
+
+---
+
+## Changing the gauge later
+
+You don't need to SSH back in or re-run the install script to switch
+gauges. Every display now shows the last 3 digits of the Pi's IP
+address in the corner (next to the "Updated" timestamp) — use that to
+find it on your router's device list, or just check there directly.
+
+Then, from any browser on the same network:
+
+```
+http://<the-pi's-ip>:8080
+```
+
+- **2.13" (single-gauge):** change the label, USGS site number, or
+  measurement, and the display refreshes immediately after you save.
+- **2.7" (multi-gauge):** change any of the 4 buttons at once. Saving
+  restarts the display service to pick up the change, so the screen
+  briefly blanks before showing the update — that's expected.
+
+This runs as its own `river-display-config` service, separate from the
+display itself — `sudo systemctl status river-display-config` if the
+page won't load.
 
 ---
 
@@ -217,6 +246,13 @@ Depends on your model:
 **WiFi looks connected in `raspi-config` but the Pi never comes online**
 Almost always a 2.4GHz vs. 5GHz mismatch — see the note at the end of
 Step 1.
+
+**Web config page (`:8080`) won't load, or saving doesn't do anything**
+Check `sudo systemctl status river-display-config` — if it's not
+running, `journalctl -u river-display-config -n 50` will show why.
+On the 2.7" HAT, if saving doesn't restart the display, the sudoers
+rule the installer sets up for that one restart command may not have
+applied — re-running the install script re-adds it.
 
 ---
 
