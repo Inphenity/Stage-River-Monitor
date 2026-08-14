@@ -4,14 +4,15 @@ Turn a Raspberry Pi and a small e-paper display into a dedicated river
 gauge monitor: live discharge or gauge height, a 48-hour trend line, and
 (on the bigger display) multiple gauges you can flip between with a
 button press. Data comes straight from USGS — no signup, no API key.
-Once it's running, you can change the gauge anytime from a browser — no
-SSH required — and the display itself shows the last 3 digits of the
-Pi's IP so it's easy to find on your network.
+Once it's running, you can change the gauge, flip the orientation, or
+even join a new WiFi network anytime from a browser — no SSH required —
+and the display itself shows the last 3 digits of the Pi's IP so it's
+easy to find on your network.
 
 This guide assumes you've never set up a Raspberry Pi before. By the
 end you'll have a working display on your desk.
 
-**[→ Open the configurator](https://inphenity.github.io/Stage-River-Monitor/)**
+**[→ Open the setup tool](https://inphenity.github.io/Stage-River-Monitor/)**
 to generate your install script — you'll come back to that in Step 4.
 
 ---
@@ -19,8 +20,11 @@ to generate your install script — you'll come back to that in Step 4.
 ## What you'll need
 
 **Hardware**
-- A Raspberry Pi with a 40-pin GPIO header (a Pi Zero 2 W is a good
-  cheap choice for this; a Pi 3/4/5 works too, just overkill)
+- A Raspberry Pi with a 40-pin GPIO header (a **Pi Zero 2 WH** is the
+  best pick if you're new to this — the "H" means the header pins come
+  pre-soldered, so the e-paper HAT just pushes on with no soldering
+  required. The plain Pi Zero 2 W is otherwise identical but needs the
+  header soldered on yourself. A Pi 3/4/5 works too, just overkill)
 - A micro SD card, 8GB or larger
 - One of:
   - [Waveshare 2.13" e-Paper HAT](https://www.waveshare.com/2.13inch-e-paper-hat.htm) — single gauge, simplest setup
@@ -128,11 +132,11 @@ ssh <username>@<that-ip-address>
 
 ## Step 4 — Generate your install script
 
-Open the **[STAGE configurator](https://inphenity.github.io/Stage-River-Monitor/)**
+Open the **[STAGE setup tool](https://inphenity.github.io/Stage-River-Monitor/)**
 in a browser on your computer (not the Pi). It's laid out as a numbered
 sequence of sections — work through them top to bottom:
 
-- **00 — Network** — skip this if the Pi's already on WiFi (it is, from Step 1). Only add networks here if you want the Pi to *also* be able to join others.
+- **00 — Network** — skip this if the Pi's already on WiFi (it is, from Step 1). Add networks here for the Pi to join *in addition* to that one — a work WiFi, a mobile hotspot, a backup network. Also where the **fallback setup hotspot** lives (on by default) — if the Pi ever can't reach any known WiFi network, it broadcasts its own network so you can fix WiFi from a phone instead of re-flashing the SD card. Give it a name and an 8+ character password here; see [If WiFi ever stops working](#if-wifi-ever-stops-working) below for how it's used.
 - **01 — Display hardware** — pick your HAT (2.13" or 2.7"), and for the 2.7" confirm the board revision printed on the back (V1 vs V2) — picking the wrong one leaves the panel blank with no error.
 - **02 — Station / Gauges** — find your river's USGS site number at [waterdata.usgs.gov/nwis/rt](https://waterdata.usgs.gov/nwis/rt/) (it's the number in that gauge's URL), then choose discharge or gauge height — check your site's page for which one it actually publishes.
 - **03 — Display behavior** — defaults are sensible; adjust as you like.
@@ -153,7 +157,8 @@ Enter. It will:
 - Write your display script
 - Run a quick test — watch the display, it should update
 - Set up either a cron schedule (2.13") or a background service (2.7") so it keeps refreshing on its own
-- Start a small web config page on port 8080, so you can change the gauge later without SSHing back in
+- Start a small web config page on port 8080, so you can change the gauge, flip, or WiFi later without SSHing back in
+- Set up the fallback hotspot (unless you turned it off in the setup tool)
 - If you picked a PiSugar model, install and start its button watcher too
 
 **If this is the very first time SPI has been enabled on this Pi**,
@@ -187,12 +192,13 @@ journalctl -u pisugar-button-setup           # PiSugar 2/2 Pro/3 series
 
 ---
 
-## Changing the gauge later
+## Changing settings later
 
-You don't need to SSH back in or re-run the install script to switch
-gauges. Every display now shows the last 3 digits of the Pi's IP
-address in the corner (next to the "Updated" timestamp) — use that to
-find it on your router's device list, or just check there directly.
+You don't need to SSH back in or re-run the install script for any of
+this. Every display shows the last 3 digits of the Pi's IP address in
+the corner (next to the "Updated" timestamp, with a small WiFi icon
+under it) — use that to find it on your router's device list, or just
+check there directly.
 
 Then, from any browser on the same network:
 
@@ -200,15 +206,51 @@ Then, from any browser on the same network:
 http://<the-pi's-ip>:8080
 ```
 
-- **2.13" (single-gauge):** change the label, USGS site number, or
-  measurement, and the display refreshes immediately after you save.
-- **2.7" (multi-gauge):** change any of the 4 buttons at once. Saving
-  restarts the display service to pick up the change, so the screen
-  briefly blanks before showing the update — that's expected.
+- **2.13" (single-gauge):** change the label, USGS site number,
+  measurement, or the 180° flip, and the display refreshes immediately
+  after you save.
+- **2.7" (multi-gauge):** change any of the 4 buttons, or the 180°
+  flip, all at once. Saving restarts the display service to pick up
+  the change, so the screen briefly blanks before showing the update —
+  that's expected.
+- **Either display:** if you turned on the fallback hotspot in the
+  setup tool, this same page also has a **"Join a WiFi network"**
+  section — scans for nearby networks and lets you switch the Pi to a
+  new one without touching a keyboard. See the next section for when
+  this actually matters.
 
 This runs as its own `river-display-config` service, separate from the
 display itself — `sudo systemctl status river-display-config` if the
 page won't load.
+
+---
+
+## If WiFi ever stops working
+
+This only applies if you left **"Fallback setup hotspot"** turned on
+in the setup tool's 00 — Network section (it's on by default).
+
+If the Pi ever can't reach any WiFi network it knows about — the
+password in Step 1 was wrong, the network got renamed, the router got
+replaced, or the Pi moved somewhere new — it automatically broadcasts
+its own network instead of just going dark. No monitor, keyboard, or
+re-flashing required to fix it:
+
+1. On your phone or laptop, connect to the WiFi network named whatever
+   you set as the hotspot SSID in the setup tool (defaults to
+   `<display label>-setup`), using the password you set there. Expect
+   a "no internet" warning on this network — that's normal, it's
+   local-only.
+2. Open `http://10.42.0.1:8080` in a browser.
+3. Use the **"Join a WiFi network"** section to pick your (real)
+   network and enter its password, then submit.
+4. The Pi switches over and the hotspot disappears within a few
+   seconds. Reconnect your phone/laptop to your normal WiFi, then find
+   the Pi there as usual (`ssh` by hostname, or the IP shown on the
+   display).
+
+The hotspot only ever activates when normal WiFi is unreachable —
+otherwise it stays off and out of the way.
 
 ---
 
@@ -236,12 +278,12 @@ not working on your particular network/router.
 Check `sudo systemctl status river-display` — if the service isn't
 running, `journalctl -u river-display -n 50` will show why. Also
 confirm you actually filled in a site number for that button's gauge
-slot in the configurator — an empty one is left unmapped on purpose.
+slot in the setup tool — an empty one is left unmapped on purpose.
 
 **PiSugar button does nothing**
 Depends on your model:
 - **PiSugar S / S Plus**: check `sudo systemctl status pisugar-button` — if the service isn't running, `journalctl -u pisugar-button -n 50` will show why. Also make sure I2C is disabled in `sudo raspi-config` (Interface Options → I2C) — PiSugar's own docs note this button function conflicts with I2C being enabled.
-- **PiSugar 2 / 2 Pro / 3 series**: this depends on `pisugar-server` already being installed (the configurator's script doesn't install it, only binds to it). Check with `sudo systemctl status pisugar-server` — if it's missing, install it first with `curl https://cdn.pisugar.com/release/pisugar-power-manager.sh | sudo bash`, then re-run `python3 ~/river_display/pisugar_button_setup.py`.
+- **PiSugar 2 / 2 Pro / 3 series**: this depends on `pisugar-server` already being installed (the setup tool's script doesn't install it, only binds to it). Check with `sudo systemctl status pisugar-server` — if it's missing, install it first with `curl https://cdn.pisugar.com/release/pisugar-power-manager.sh | sudo bash`, then re-run `python3 ~/river_display/pisugar_button_setup.py`.
 
 **WiFi looks connected in `raspi-config` but the Pi never comes online**
 Almost always a 2.4GHz vs. 5GHz mismatch — see the note at the end of
@@ -253,6 +295,22 @@ running, `journalctl -u river-display-config -n 50` will show why.
 On the 2.7" HAT, if saving doesn't restart the display, the sudoers
 rule the installer sets up for that one restart command may not have
 applied — re-running the install script re-adds it.
+
+**Fallback hotspot never shows up when WiFi is down**
+Confirm you left "Fallback setup hotspot" turned on in the
+setup tool's 00 — Network section — it's not added at all if that
+was off. If it was on, check `nmcli connection show` on the Pi (over a
+wired/direct connection, or once WiFi is working again) for a
+connection named `Hotspot`; if it's missing, re-run the install
+script. Also allow it a minute or so after WiFi fails — NetworkManager
+tries known networks first before falling back.
+
+**"Join a WiFi network" on the config page doesn't connect**
+Double-check the password — this section doesn't validate it before
+attempting to connect, so a wrong password just fails silently back to
+whatever network was active before. If it was working over the
+fallback hotspot specifically, also confirm the sudoers rule applied
+correctly (same fix as above: re-run the install script).
 
 ---
 

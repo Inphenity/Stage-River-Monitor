@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>STAGE — River Gauge E-Paper Configurator</title>
+<title>STAGE — River Gauge E-Paper Setup Tool</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
@@ -229,6 +229,27 @@ footer{ text-align:center; color: var(--ink-muted); font-family: var(--mono); fo
           <div id="wifiNetworksList"></div>
           <button type="button" class="add-minute-btn" id="addWifiBtn" style="margin-top:4px;">+ Add WiFi network</button>
           <div class="field-hint toggle-warn" style="margin-top:14px;">The generated script stores each password in plain text, same as any Pi WiFi setup. Don't post the generated script somewhere public once it has real passwords in it.</div>
+
+          <div class="toggle-row" style="margin-top:18px;">
+            <input type="checkbox" id="fallbackAp" checked>
+            <label for="fallbackAp" class="toggle-text">
+              <div class="toggle-title">Fallback setup hotspot</div>
+              <div class="toggle-desc">If the Pi can't reach any known WiFi network (wrong password above, network changed, moved somewhere new), it broadcasts its own network so you can fix WiFi from a phone or laptop instead of re-flashing the SD card. Only activates when normal WiFi is unreachable — otherwise stays off and out of the way.</div>
+            </label>
+          </div>
+          <div id="fallbackApFields" style="margin-top:4px;">
+            <div class="field">
+              <div class="field-label">Hotspot name (SSID)</div>
+              <input type="text" id="fallbackApSsid" maxlength="32" placeholder="e.g. rivermonitor-setup">
+              <div class="field-hint">Defaults to "&lt;display label&gt;-setup" if left blank.</div>
+            </div>
+            <div class="field">
+              <div class="field-label">Hotspot password</div>
+              <input type="text" id="fallbackApPassword" maxlength="63" placeholder="At least 8 characters">
+              <div class="field-hint">Required — WPA2 needs 8+ characters. Anyone who knows this can join the hotspot while it's active, so don't reuse a password you care about.</div>
+              <div class="field-hint toggle-warn" id="fallbackApWarning" style="display:none;">Password needs to be at least 8 characters — the hotspot won't be set up until it is.</div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -422,7 +443,16 @@ footer{ text-align:center; color: var(--ink-muted); font-family: var(--mono); fo
                 <g id="previewGroup">
                   <rect x="0" y="0" width="250" height="122" fill="#e8e5da"/>
                   <text id="pvLabel" x="5" y="13" font-family="IBM Plex Mono, monospace" font-weight="700" font-size="13" fill="#111">River Monitor</text>
-                  <text x="150" y="9" font-family="IBM Plex Mono, monospace" font-size="9" fill="#111">Updated 2:32 PM</text>
+                  <text id="pvUpdated" x="200" y="9" text-anchor="end" font-family="IBM Plex Mono, monospace" font-size="9" fill="#111">Updated 2:32 PM</text>
+                  <rect id="pvIpHighlight" x="0" y="0" width="0" height="0" fill="none" stroke="#c0392b" stroke-width="1" stroke-dasharray="2,2" rx="2"/>
+                  <text id="pvIpSuffix" x="245" y="9" text-anchor="end" font-family="IBM Plex Mono, monospace" font-size="9" font-weight="700" fill="#c0392b">.147</text>
+                  <g id="pvWifiIcon" transform="translate(234,22)">
+                    <circle r="8" cx="0" cy="0" fill="none" stroke="#c0392b" stroke-width="1.3"/>
+                    <circle r="5" cx="0" cy="0" fill="none" stroke="#c0392b" stroke-width="1.3"/>
+                    <circle r="2.2" cx="0" cy="0" fill="none" stroke="#c0392b" stroke-width="1.3"/>
+                    <circle r="1.4" cx="0" cy="0" fill="#c0392b"/>
+                    <rect x="-10" y="1" width="20" height="10" fill="#e8e5da"/>
+                  </g>
                   <text id="pvReading" x="5" y="42" font-family="IBM Plex Mono, monospace" font-weight="700" font-size="28" fill="#111">959 cfs</text>
                   <text x="165" y="47" font-family="IBM Plex Mono, monospace" font-size="9" fill="#111">07/29</text>
                   <text x="165" y="61" font-family="IBM Plex Mono, monospace" font-size="9" fill="#111">02:32 PM</text>
@@ -435,6 +465,9 @@ footer{ text-align:center; color: var(--ink-muted); font-family: var(--mono); fo
                 </g>
               </svg>
             </div>
+          </div>
+          <div class="field-hint" style="margin-top:10px;">
+            <span style="color:#c0392b; font-weight:700;">.147</span> with the WiFi symbol beneath it (dashed box above) — the last 3 digits of the Pi's IP address. Use it to find the device on your network and reach its web config page at <code>:8080</code>.
           </div>
         </div>
         <div class="spec-list" id="specList"></div>
@@ -1030,7 +1063,7 @@ below - so a power-on always shows current data rather than waiting
 for the next scheduled refresh.
 
 Driver: waveshare_epd.${epdModule} -- selected from the "2.7\\" board
-revision" option in the configurator. Waveshare's 2.7" HAT has two
+revision" option in the setup tool. Waveshare's 2.7" HAT has two
 hardware generations with different init/LUT behavior; picking the
 wrong one won't raise an error, it'll just leave the panel blank with
 no indication why. If you're still getting a blank screen after
@@ -1070,7 +1103,7 @@ KEY_PINS = {1: 5, 2: 6, 3: 13, 4: 19}
 
 CONFIG_FILE = os.path.expanduser("~/river_display/config.json")
 
-# ---- Gauges baked in by the STAGE configurator - the starting point,
+# ---- Gauges baked in by the STAGE setup tool - the starting point,
 # and the fallback for any button config.json doesn't cover. The web
 # config page (:8080) rewrites config.json and restarts this service so
 # it picks the change up. ----
@@ -1617,7 +1650,83 @@ button{margin-top:20px;padding:10px 18px;background:#E8C468;color:#0D2431;border
 .checkrow input{width:auto;margin:0}
 a{color:#7EC8E3}.hint{font-size:12px;color:#7FA3B3;margin-top:24px}`;
 
+  // Shared "join a WiFi network" section - only wired in when the
+  // fallback hotspot is enabled, since that's also what installs the
+  // narrowly-scoped sudoers rule this needs to actually run nmcli.
+  const WIFI_PY_FUNCS = `
+def wifi_scan():
+    try:
+        out = subprocess.run(["nmcli", "-t", "-f", "SSID", "device", "wifi", "list"],
+                              capture_output=True, text=True, timeout=10)
+        seen, names = set(), []
+        for line in out.stdout.splitlines():
+            ssid = line.strip()
+            if ssid and ssid not in seen:
+                seen.add(ssid)
+                names.append(ssid)
+        return names
+    except Exception:
+        return []
+
+def wifi_connect_later(ssid, password):
+    """Waits a couple seconds before actually connecting, so the browser
+    finishes receiving the 'attempting to join' response first - if this
+    page is being served over the fallback hotspot itself, that
+    interface is about to drop as the Pi switches to the new network."""
+    def go():
+        subprocess.run(["sudo", "-n", "nmcli", "device", "wifi", "connect", ssid, "password", password], timeout=25)
+    threading.Timer(2.0, go).start()
+`;
+
+  const WIFI_FORM_HTML = `<div class="gauge" style="margin-top:24px;">
+<h2>Join a WiFi network</h2>
+<p class="sub" style="margin:4px 0 10px;">If this page loaded over the fallback hotspot, saving here switches the Pi to the network below and the hotspot disappears - reconnect your phone/laptop to your normal WiFi afterward and find the Pi there instead.</p>
+<form method="POST" action="/wifi">
+<label>Network name (SSID)<input type="text" name="ssid" list="ssidList" required></label>
+<datalist id="ssidList"></datalist>
+<label>Password<input type="text" name="password" required></label>
+<button type="submit">Connect</button>
+</form>
+<p class="hint" id="scanHint">Scanning for nearby networks…</p>
+</div>
+<script>
+fetch("/wifi-scan").then(function(r){ return r.json(); }).then(function(names){
+  var dl = document.getElementById("ssidList");
+  names.forEach(function(n){ var o = document.createElement("option"); o.value = n; dl.appendChild(o); });
+  document.getElementById("scanHint").textContent = names.length
+    ? ("Found " + names.length + " nearby network(s) - start typing to see them.")
+    : "No nearby networks found - type the name manually.";
+}).catch(function(){
+  document.getElementById("scanHint").textContent = "Could not scan - type the network name manually.";
+});
+<${''}/script>`;
+
+  const WIFI_ROUTES_PY = `
+        if self.path == "/wifi-scan":
+            body = json.dumps(wifi_scan()).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(body)
+            return
+`;
+
+  const WIFI_POST_PY = `
+        if self.path == "/wifi":
+            length = int(self.headers.get("Content-Length", 0))
+            fields = parse_qs(self.rfile.read(length).decode("utf-8"))
+            ssid = fields.get("ssid", [""])[0].strip()
+            password = fields.get("password", [""])[0]
+            if ssid and password:
+                wifi_connect_later(ssid, password)
+                self._render(msg=f'<p class="msg">Attempting to join &quot;{ssid}&quot;... if this page loaded over the fallback hotspot, it will disappear in a few seconds - reconnect to your normal WiFi and find the Pi there.</p>')
+            else:
+                self._render(msg='<p class="msg" style="color:#E8896B">Enter both a network name and password.</p>')
+            return
+`;
+
   function buildConfigServerScriptSingle(opts){
+    const apEnabled = opts.fallbackAp && opts.fallbackApPassword && opts.fallbackApPassword.length >= 8;
     return `#!/usr/bin/env python3
 """
 STAGE web config page - change the USGS gauge (and confirm the device's
@@ -1630,7 +1739,7 @@ one immediate run so the change shows up right away).
 import json
 import os
 import socket
-import subprocess
+import subprocess${apEnabled ? '\nimport threading' : ''}
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import parse_qs
 
@@ -1668,7 +1777,7 @@ def get_ip():
         return ip
     except Exception:
         return "unknown"
-
+${apEnabled ? WIFI_PY_FUNCS + '\nWIFI_FORM_HTML = """' + WIFI_FORM_HTML + '"""' : ''}
 PAGE_HEAD = """<!DOCTYPE html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>River display config</title><style>${CONFIG_PAGE_CSS}</style></head><body>"""
@@ -1685,8 +1794,9 @@ PAGE_FORM = """<h1>{label}</h1><p class="sub">Device IP: <span class="ip">{ip}</
 <label class="checkrow"><input type="checkbox" name="flip180" value="1" {flip_checked}> Flip display 180° (for upside-down mounting)</label>
 <button type="submit">Save &amp; refresh now</button>
 </form>
-<p class="hint">Find USGS site numbers at <a href="https://waterdata.usgs.gov/nwis/rt">waterdata.usgs.gov</a>.</p>
-</body></html>"""
+<p class="hint">Find USGS site numbers at <a href="https://waterdata.usgs.gov/nwis/rt">waterdata.usgs.gov</a>.</p>"""
+
+PAGE_TAIL = """</body></html>"""
 
 class Handler(BaseHTTPRequestHandler):
     def _render(self, msg=""):
@@ -1697,17 +1807,18 @@ class Handler(BaseHTTPRequestHandler):
             disc_sel="selected" if cfg["measurement"] != "gaugeHeight" else "",
             height_sel="selected" if cfg["measurement"] == "gaugeHeight" else "",
             flip_checked="checked" if cfg["flip180"] else "",
-        )
+        )${apEnabled ? '\n        body += WIFI_FORM_HTML' : ''}
+        body += PAGE_TAIL
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.end_headers()
         self.wfile.write(body.encode("utf-8"))
 
     def do_GET(self):
-        self._render()
+${apEnabled ? WIFI_ROUTES_PY : ''}        self._render()
 
     def do_POST(self):
-        length = int(self.headers.get("Content-Length", 0))
+${apEnabled ? WIFI_POST_PY : ''}        length = int(self.headers.get("Content-Length", 0))
         fields = parse_qs(self.rfile.read(length).decode("utf-8"))
         cfg = load_config()
         label = fields.get("label", [""])[0].strip()
@@ -1733,6 +1844,7 @@ if __name__ == "__main__":
   }
 
   function buildConfigServerScriptMulti(opts){
+    const apEnabled = opts.fallbackAp && opts.fallbackApPassword && opts.fallbackApPassword.length >= 8;
     return `#!/usr/bin/env python3
 """
 STAGE web config page - change any of the 4 configured gauges (and
@@ -1745,7 +1857,7 @@ so the running display picks up the change immediately.
 import json
 import os
 import socket
-import subprocess
+import subprocess${apEnabled ? '\nimport threading' : ''}
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import parse_qs
 
@@ -1786,7 +1898,7 @@ def get_ip():
         return ip
     except Exception:
         return "unknown"
-
+${apEnabled ? WIFI_PY_FUNCS + '\nWIFI_FORM_HTML = """' + WIFI_FORM_HTML + '"""' : ''}
 PAGE_HEAD = """<!DOCTYPE html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>River display config</title><style>${CONFIG_PAGE_CSS}</style></head><body>"""
@@ -1807,8 +1919,9 @@ PAGE_BOTTOM = """<label class="checkrow"><input type="checkbox" name="flip180" v
 <button type="submit">Save &amp; restart display</button>
 </form>
 <p class="hint">Find USGS site numbers at <a href="https://waterdata.usgs.gov/nwis/rt">waterdata.usgs.gov</a>.
-Saving restarts the display service, so the screen briefly blanks before showing the update.</p>
-</body></html>"""
+Saving restarts the display service, so the screen briefly blanks before showing the update.</p>"""
+
+PAGE_TAIL = """</body></html>"""
 
 class Handler(BaseHTTPRequestHandler):
     def _render(self, msg=""):
@@ -1822,17 +1935,18 @@ class Handler(BaseHTTPRequestHandler):
             ) for b in ("1", "2", "3", "4")
         )
         body = (PAGE_HEAD + PAGE_TOP.format(ip=get_ip(), msg=msg) + blocks
-                + PAGE_BOTTOM.format(flip_checked="checked" if cfg["flip180"] else ""))
+                + PAGE_BOTTOM.format(flip_checked="checked" if cfg["flip180"] else ""))${apEnabled ? '\n        body += WIFI_FORM_HTML' : ''}
+        body += PAGE_TAIL
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.end_headers()
         self.wfile.write(body.encode("utf-8"))
 
     def do_GET(self):
-        self._render()
+${apEnabled ? WIFI_ROUTES_PY : ''}        self._render()
 
     def do_POST(self):
-        length = int(self.headers.get("Content-Length", 0))
+${apEnabled ? WIFI_POST_PY : ''}        length = int(self.headers.get("Content-Length", 0))
         fields = parse_qs(self.rfile.read(length).decode("utf-8"))
         cfg = load_full_config()
         for b in ("1", "2", "3", "4"):
@@ -1880,6 +1994,29 @@ ${lines}
 `;
     }
 
+    const apEnabled = opts.fallbackAp && opts.fallbackApPassword && opts.fallbackApPassword.length >= 8;
+    let fallbackApBlock = '';
+    if (apEnabled){
+      fallbackApBlock = `
+# ---- Fallback setup hotspot - only activates if no known WiFi network is
+# reachable, so WiFi can be fixed from a phone/laptop instead of
+# re-flashing the SD card. NetworkManager tries higher-priority (normal)
+# connections first; this one is deliberately lowest-priority and always
+# "reachable" since it creates its own network instead of joining one.
+# ipv4.method=shared makes NetworkManager run its own DHCP/DNS for it -
+# no separate hostapd/dnsmasq install needed. ----
+sudo nmcli connection add type wifi ifname wlan0 con-name "Hotspot" autoconnect yes ssid "${escBash(opts.fallbackApSsid)}"
+sudo nmcli connection modify "Hotspot" 802-11-wireless.mode ap 802-11-wireless.band bg ipv4.method shared
+sudo nmcli connection modify "Hotspot" wifi-sec.key-mgmt wpa-psk wifi-sec.psk "${escBash(opts.fallbackApPassword)}"
+sudo nmcli connection modify "Hotspot" connection.autoconnect-priority -10
+
+# ---- Let the web config page join new WiFi networks - narrowly-scoped
+# passwordless sudo, limited to these two nmcli forms only ----
+echo "%h ALL=(ALL) NOPASSWD: /usr/bin/nmcli device wifi connect *" | sed "s/%h/$(whoami)/" | sudo tee /etc/sudoers.d/river-display-wifi > /dev/null
+sudo chmod 440 /etc/sudoers.d/river-display-wifi
+`;
+    }
+
     let hdmiBlock = '';
     if (opts.hdmiOff){
       hdmiBlock = `
@@ -1914,7 +2051,7 @@ pip3 install requests RPi.GPIO spidev --break-system-packages
 
 # ---- 3. Enable SPI (needed for the e-paper HAT) ----
 sudo raspi-config nonint do_spi 0
-${wifiCredsBlock}${hdmiBlock}${wifiBlock}
+${wifiCredsBlock}${fallbackApBlock}${hdmiBlock}${wifiBlock}
 # ---- 4. Project directory ----
 mkdir -p ~/river_display
 cd ~/river_display
@@ -2013,7 +2150,7 @@ pip3 install requests RPi.GPIO spidev --break-system-packages
 
 # ---- 3. Enable SPI (needed for the e-paper HAT) ----
 sudo raspi-config nonint do_spi 0
-${wifiCredsBlock}${hdmiBlock}${wifiBlock}
+${wifiCredsBlock}${fallbackApBlock}${hdmiBlock}${wifiBlock}
 # ---- 4. Project directory ----
 mkdir -p ~/river_display
 cd ~/river_display
@@ -2075,11 +2212,12 @@ echo "Change the gauge anytime at: http://$(hostname -I | awk '{print $1}'):8080
 
   function currentOpts(){
     const alwaysOn = $('alwaysOn').checked;
+    const label = $('label').value.trim() || 'River Monitor';
     return {
       wifiNetworks: getWifiNetworks(),
       displayHardware: document.querySelector('input[name="displayHardware"]:checked').value,
       panel27Variant: $('panel27Variant').value,
-      label: $('label').value.trim() || 'River Monitor',
+      label: label,
       siteNo: $('siteNo').value.trim() || '00000000',
       measurement: $('measurement').value,
       gauges: getGauges(),
@@ -2094,7 +2232,15 @@ echo "Change the gauge anytime at: http://$(hostname -I | awk '{print $1}'):8080
       wifiOff: alwaysOn ? false : $('wifiOff').checked,
       pisugarModel: $('pisugarModel').value,
       pisugarClickType: $('pisugarClickType').value,
+      fallbackAp: $('fallbackAp').checked,
+      fallbackApSsid: $('fallbackApSsid').value.trim() || slugifySsid(label),
+      fallbackApPassword: $('fallbackApPassword').value,
     };
+  }
+
+  function slugifySsid(label){
+    const slug = label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    return (slug || 'rivermonitor').slice(0, 26) + '-setup';
   }
 
   function updatePreview(opts){
@@ -2115,6 +2261,32 @@ echo "Change the gauge anytime at: http://$(hostname -I | awk '{print $1}'):8080
     $('pvLabel').textContent = label;
     $('pvReading').textContent = `${demoValue} ${unitLabel}`.trim();
     $('pvTrendLabel').textContent = `48h trend (${unitLabel}):`;
+
+    // Where the last-3-of-IP indicator actually lands differs by hardware:
+    // on the 2.7" (multi-gauge) it sits next to the label, since that row's
+    // "Updated" text is already crowded by the reading's own timestamp; on
+    // the 2.13" (single-gauge) it's appended to the "Updated" line itself.
+    // Box/icon dimensions are fixed since the demo text (".147") never
+    // changes - only the vertical offset moves between the two modes, and
+    // both leave a clear gap above the trend arrow at y=34-48.
+    const ipSuffix = $('pvIpSuffix');
+    const ipHighlight = $('pvIpHighlight');
+    const wifiIcon = $('pvWifiIcon');
+    if (opts.displayHardware === '2.7'){
+      ipSuffix.setAttribute('y', '13');
+      wifiIcon.setAttribute('transform', 'translate(234,26)');
+      ipHighlight.setAttribute('x', '221');
+      ipHighlight.setAttribute('y', '4');
+      ipHighlight.setAttribute('width', '27');
+      ipHighlight.setAttribute('height', '27');
+    } else {
+      ipSuffix.setAttribute('y', '9');
+      wifiIcon.setAttribute('transform', 'translate(234,22)');
+      ipHighlight.setAttribute('x', '221');
+      ipHighlight.setAttribute('y', '0');
+      ipHighlight.setAttribute('width', '27');
+      ipHighlight.setAttribute('height', '24');
+    }
 
     const arrow = $('pvArrow');
     if (!opts.trendArrow){
@@ -2215,6 +2387,20 @@ echo "Change the gauge anytime at: http://$(hostname -I | awk '{print $1}'):8080
   syncPisugarFields();
   hourStart.addEventListener('change', render);
   hourEnd.addEventListener('change', render);
+
+  // ---- Fallback hotspot: show its SSID/password fields only when enabled ----
+  const fallbackApEl = $('fallbackAp');
+  const fallbackApFields = $('fallbackApFields');
+  const fallbackApWarning = $('fallbackApWarning');
+  function syncFallbackAp(){
+    fallbackApFields.style.display = fallbackApEl.checked ? '' : 'none';
+    const pw = $('fallbackApPassword').value;
+    fallbackApWarning.style.display = (fallbackApEl.checked && pw.length > 0 && pw.length < 8) ? '' : 'none';
+  }
+  fallbackApEl.addEventListener('change', () => { syncFallbackAp(); render(); });
+  $('fallbackApSsid').addEventListener('input', render);
+  $('fallbackApPassword').addEventListener('input', () => { syncFallbackAp(); render(); });
+  syncFallbackAp();
 
   // ---- 24/7 mode: disables the active-hours window and, since there's no
   // "outside" window left, forces the WiFi-curfew toggle off too ----
