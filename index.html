@@ -2300,21 +2300,28 @@ echo "Change the gauge anytime at: http://$(hostname -I | awk '{print $1}'):8080
 
   function updateSteps(opts){
     const stepsEl = $('stepsBlock');
+    const apNote = opts.fallbackAp
+      ? ' and the fallback setup hotspot'
+      : '';
+    const lastStepMulti = `The last 3 digits of the Pi's IP now show on the display itself, with a small WiFi icon underneath. Visit <code>http://&lt;that-ip&gt;:8080</code> from any browser on the same network to change a gauge or flip the display${opts.fallbackAp ? ', or to join a new WiFi network if the Pi ever loses the one it has' : ''} — no SSH required.`;
+    const lastStepSingle = `The last 3 digits of the Pi's IP now show on the display itself, with a small WiFi icon underneath. Visit <code>http://&lt;that-ip&gt;:8080</code> from any browser on the same network to change the gauge or flip the display${opts.fallbackAp ? ', or to join a new WiFi network if the Pi ever loses the one it has' : ''} — no SSH required.`;
     if (opts.displayHardware === '2.7'){
       stepsEl.innerHTML = `<ol>
+        <li>With the Pi powered off, wire the e-paper HAT (and battery, if using one) to the 40-pin header — do this before the first boot if you haven't powered it on yet. Then power on and give it a minute to finish booting.</li>
         <li>SSH into the Raspberry Pi (headless is fine — SPI, GPIO, and systemd do all the work).</li>
-        <li>Paste the script above and press enter. It installs dependencies, pulls the Waveshare e-paper library, writes the display script, and installs it as a background service.</li>
+        <li>Paste the script above and press enter. It installs dependencies, pulls the Waveshare e-paper library, writes the display script, installs it as a background service, and sets up the web config page${apNote}.</li>
         <li>If this is the first time enabling SPI on this Pi, reboot once: <code>sudo reboot</code></li>
-        <li>Wire the e-paper HAT to the 40-pin header, confirm the test run shows a display update, then press each configured button and confirm the display switches gauges.</li>
-        <li>The last 3 digits of the Pi's IP now show on the display itself. To change a gauge later without SSHing back in, visit <code>http://&lt;that-ip&gt;:8080</code> from any browser on the same network.</li>
+        <li>Confirm the test run shows a display update, then press each configured button and confirm the display switches gauges.</li>
+        <li>${lastStepMulti}</li>
       </ol>`;
     } else {
       stepsEl.innerHTML = `<ol>
+        <li>With the Pi powered off, wire the e-paper HAT (and battery, if using one) to the 40-pin header — do this before the first boot if you haven't powered it on yet. Then power on and give it a minute to finish booting.</li>
         <li>SSH into the Raspberry Pi (headless is fine — SPI and cron do all the work).</li>
-        <li>Paste the script above and press enter. It installs dependencies, pulls the Waveshare e-paper library, writes the display script, and sets up the cron schedule.</li>
+        <li>Paste the script above and press enter. It installs dependencies, pulls the Waveshare e-paper library, writes the display script, sets up the cron schedule, and sets up the web config page${apNote}.</li>
         <li>If this is the first time enabling SPI on this Pi, reboot once: <code>sudo reboot</code></li>
-        <li>Wire the e-paper HAT to the 40-pin header and confirm the test run in the script output shows a display update.</li>
-        <li>The last 3 digits of the Pi's IP now show on the display itself. To change the gauge later without SSHing back in, visit <code>http://&lt;that-ip&gt;:8080</code> from any browser on the same network.</li>
+        <li>Confirm the test run in the script output shows a display update.</li>
+        <li>${lastStepSingle}</li>
       </ol>`;
     }
   }

@@ -53,7 +53,9 @@ Everything below is done "headless," over the network.
    - ✅ Configure WiFi — enter your network's SSID and password, and set the WiFi country to yours
    - ✅ Set locale/timezone if you'd like correct timestamps
 5. Save, then click **Write**. This erases the card and writes the OS — confirm when it asks.
-6. When it finishes, move the SD card into the Pi and power it on. First boot takes 1-2 minutes.
+6. When it finishes, move the SD card into the Pi — but hold off on
+   powering it on until the display (and battery, if using one) is
+   wired up in Step 2.
 
 > **Pi Zero W/WH/2W/2WH note:** these only have a 2.4GHz WiFi radio. If
 > your network name doesn't show up in the imager's WiFi list, make
@@ -65,14 +67,17 @@ Everything below is done "headless," over the network.
 
 ## Step 2 — Wire up the display (and battery, if using one)
 
-With the Pi powered **off**, seat the e-paper HAT onto the 40-pin GPIO
-header — it only fits one way, flush against all 40 pins. If you're
-also using a PiSugar, check its instructions for whether it sits
-between the Pi and the HAT or stacks separately — this varies by
+With the Pi still powered **off**, seat the e-paper HAT onto the
+40-pin GPIO header — it only fits one way, flush against all 40 pins.
+If you're also using a PiSugar, check its instructions for whether it
+sits between the Pi and the HAT or stacks separately — this varies by
 PiSugar model.
 
 Nothing else to configure here yet — SPI (which the display needs)
 gets enabled by the install script in Step 5.
+
+Once everything is seated, power on the Pi. First boot takes 1-2
+minutes.
 
 ---
 
