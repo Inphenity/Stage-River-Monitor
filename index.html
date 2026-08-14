@@ -727,9 +727,6 @@ def draw_trend_arrow(draw, trend, x, y, size=14):
     trend = get_trend(history)
     draw_trend_arrow(draw, trend, x=222, y=34, size=14)` : '';
 
-    const rotateLine = opts.flip180 ? `
-    image = image.rotate(180)` : '';
-
     const refreshLogic = opts.fullRefreshOnly
       ? `    do_full_refresh = True  # full refresh every run - avoids ghosting`
       : `    run_count = get_run_count()
@@ -764,6 +761,7 @@ CONFIG_FILE = os.path.expanduser("~/river_display/config.json")
 DEFAULT_SITE_NO = "${opts.siteNo}"
 DEFAULT_MEASUREMENT = "${opts.measurement}"
 DEFAULT_LABEL = "${escPy(opts.label)}"
+DEFAULT_FLIP180 = ${opts.flip180 ? 'True' : 'False'}
 HISTORY_PERIOD = "P2D"
 FULL_REFRESH_EVERY = 8
 STATE_FILE = os.path.expanduser("~/.river_display_state")
@@ -771,16 +769,19 @@ FONT_PATH_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 FONT_PATH_REG = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
 
 def load_config():
-    """Site/measurement/label from config.json (written by the web config
-    page at :8080) if present, otherwise whatever STAGE baked in at
-    install time."""
-    cfg = {"site_no": DEFAULT_SITE_NO, "measurement": DEFAULT_MEASUREMENT, "label": DEFAULT_LABEL}
+    """Site/measurement/label/orientation from config.json (written by
+    the web config page at :8080) if present, otherwise whatever STAGE
+    baked in at install time."""
+    cfg = {"site_no": DEFAULT_SITE_NO, "measurement": DEFAULT_MEASUREMENT,
+           "label": DEFAULT_LABEL, "flip180": DEFAULT_FLIP180}
     try:
         with open(CONFIG_FILE) as f:
             saved = json.load(f)
         for key in ("site_no", "measurement", "label"):
             if saved.get(key):
                 cfg[key] = saved[key]
+        if "flip180" in saved:
+            cfg["flip180"] = bool(saved["flip180"])
     except (FileNotFoundError, json.JSONDecodeError, ValueError):
         pass
     return cfg
@@ -898,7 +899,7 @@ def draw_sparkline(draw, values, x, y, width, height):
     draw.text(max_pos, max_label, font=font_tiny, fill=0)
     draw.text(min_pos, min_label, font=font_tiny, fill=0)
 
-def render_display(label, unit, discharge, timestamp, history):
+def render_display(label, unit, discharge, timestamp, history, flip180):
     history_values = [v for _, v in history]  # plain values for the sparkline plot
     epd = epd_driver.EPD()
 ${refreshLogic}
@@ -922,7 +923,8 @@ ${refreshLogic}
 ${trendCall}
     draw.text((5, 54), f"48h trend ({unit}):", font=font_small, fill=0)
     draw_sparkline(draw, history_values, x=5, y=68, width=240, height=50)
-${rotateLine}
+    if flip180:
+        image = image.rotate(180)
     buf = epd.getbuffer(image)
     if do_full_refresh:
         epd.init()
@@ -942,7 +944,7 @@ def main():
         flow_val = current.get(param_code, {}).get("value", "N/A")
         flow_ts = current.get(param_code, {}).get("time", "N/A")
         history = fetch_history(cfg["site_no"], param_code, period=HISTORY_PERIOD)
-        render_display(cfg["label"], unit, flow_val, flow_ts, history)
+        render_display(cfg["label"], unit, flow_val, flow_ts, history, cfg["flip180"])
     except requests.RequestException as e:
         print(f"Network/API error: {e}", file=sys.stderr)
         sys.exit(1)
@@ -1013,9 +1015,6 @@ def draw_trend_arrow(draw, trend, x, y, size=14):
         trend = get_trend(entry["history"])
         arrow_x = min(8 + int(draw.textlength(value_text, font=font_body)) + 12, w - 26)
         draw_trend_arrow(draw, trend, x=arrow_x, y=30, size=18)` : '';
-
-    const rotateLine = opts.flip180 ? `
-    image = image.rotate(180)` : '';
 
     const epdModule = opts.panel27Variant === 'v1' ? 'epd2in7' : 'epd2in7_V2';
     return `#!/usr/bin/env python3
@@ -1104,6 +1103,18 @@ def load_gauges():
     return gauges
 
 GAUGES = load_gauges()
+
+DEFAULT_FLIP180 = ${opts.flip180 ? 'True' : 'False'}
+
+def load_flip180():
+    try:
+        with open(CONFIG_FILE) as f:
+            saved = json.load(f)
+        if "flip180" in saved:
+            return bool(saved["flip180"])
+    except (FileNotFoundError, json.JSONDecodeError, ValueError):
+        pass
+    return DEFAULT_FLIP180
 
 def get_ip_suffix():
     """Last octet of the Pi's LAN IP, zero-padded to 3 digits - shown on
@@ -1245,11 +1256,16 @@ def render(button_num, full_refresh=True):
         draw.text((8, 8), "No data yet", font=font_title, fill=0)
         draw.text((8, h // 2 - 6), f"Button {button_num} is not configured", font=font_small, fill=0)
     else:
-        # Row 1: label only. Used to also carry the "Updated H:MM" render
-        # timestamp right-aligned here, but a long label (e.g. "Saluda @
-        # The Dam") could run right up against it - moved to Row 3 below,
-        # across from the reading's own "as of" timestamp instead.
+        # Row 1: label (left) + last 3 digits of the Pi's IP (right) - so
+        # it's easy to tell which device this is on a network with more
+        # than one running. Kept off Row 3 below on purpose: that row is
+        # already a tight fit between the reading's own "as of" timestamp
+        # and "Updated H:MM", and appending the IP there pushed the two
+        # into each other.
         draw.text((8, 4), entry["label"], font=font_title, fill=0)
+        ip_str = f".{get_ip_suffix()}"
+        ip_w = draw.textlength(ip_str, font=font_small)
+        draw.text((w - 8 - ip_w, 6), ip_str, font=font_small, fill=0)
 
         # Row 2: the big reading. Trend arrow (if enabled) is placed
         # dynamically just past the end of this text via textlength, and
@@ -1268,9 +1284,7 @@ ${trendCall}
         # this row starts with a deliberate few-pixel buffer below that.)
         ts_full = format_timestamp(entry["time"])
         draw.text((8, 76), f"as of {ts_full}", font=font_small, fill=0)
-        # Carries the last 3 digits of the Pi's IP, so it's easy to tell
-        # which device this is on a network with several of these running.
-        refresh_str = datetime.now().strftime("Updated %I:%M %p") + f"  ·.{get_ip_suffix()}"
+        refresh_str = datetime.now().strftime("Updated %I:%M %p")
         refresh_w = draw.textlength(refresh_str, font=font_small)
         draw.text((w - 8 - refresh_w, 76), refresh_str, font=font_small, fill=0)
 
@@ -1280,7 +1294,8 @@ ${trendCall}
         history_values = [v for _, v in entry["history"]]  # plain values for the plot
         draw_sparkline(draw, history_values, x=8, y=108, width=w - 16, height=h - 116)
 
-${rotateLine}
+    if load_flip180():
+        image = image.rotate(180)
     buf = epd.getbuffer(image)
     epd.init()
     if full_refresh:
@@ -1598,6 +1613,8 @@ button{margin-top:20px;padding:10px 18px;background:#E8C468;color:#0D2431;border
 .ip{font-family:monospace;color:#7EC8E3}.msg{margin-top:14px;color:#8FCB9B;font-size:13.5px}
 .gauge{border:1px solid #2B5064;border-radius:3px;padding:12px;margin-top:16px}
 .gauge h2{font-size:13px;margin:0;color:#7EC8E3}
+.checkrow{display:flex;align-items:center;gap:8px;margin-top:18px;text-transform:none;font-size:14px;color:#E7F1F5}
+.checkrow input{width:auto;margin:0}
 a{color:#7EC8E3}.hint{font-size:12px;color:#7FA3B3;margin-top:24px}`;
 
   function buildConfigServerScriptSingle(opts){
@@ -1618,7 +1635,8 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import parse_qs
 
 CONFIG_FILE = os.path.expanduser("~/river_display/config.json")
-DEFAULTS = {"site_no": "${opts.siteNo}", "measurement": "${opts.measurement}", "label": "${escPy(opts.label)}"}
+DEFAULTS = {"site_no": "${opts.siteNo}", "measurement": "${opts.measurement}",
+            "label": "${escPy(opts.label)}", "flip180": ${opts.flip180 ? 'True' : 'False'}}
 PORT = 8080
 
 def load_config():
@@ -1626,9 +1644,11 @@ def load_config():
     try:
         with open(CONFIG_FILE) as f:
             saved = json.load(f)
-        for k in cfg:
+        for k in ("site_no", "measurement", "label"):
             if saved.get(k):
                 cfg[k] = saved[k]
+        if "flip180" in saved:
+            cfg["flip180"] = bool(saved["flip180"])
     except (FileNotFoundError, json.JSONDecodeError, ValueError):
         pass
     return cfg
@@ -1662,6 +1682,7 @@ PAGE_FORM = """<h1>{label}</h1><p class="sub">Device IP: <span class="ip">{ip}</
 <option value="discharge" {disc_sel}>Discharge (cfs)</option>
 <option value="gaugeHeight" {height_sel}>Gauge height (ft)</option>
 </select></label>
+<label class="checkrow"><input type="checkbox" name="flip180" value="1" {flip_checked}> Flip display 180° (for upside-down mounting)</label>
 <button type="submit">Save &amp; refresh now</button>
 </form>
 <p class="hint">Find USGS site numbers at <a href="https://waterdata.usgs.gov/nwis/rt">waterdata.usgs.gov</a>.</p>
@@ -1675,6 +1696,7 @@ class Handler(BaseHTTPRequestHandler):
             site_no=cfg["site_no"],
             disc_sel="selected" if cfg["measurement"] != "gaugeHeight" else "",
             height_sel="selected" if cfg["measurement"] == "gaugeHeight" else "",
+            flip_checked="checked" if cfg["flip180"] else "",
         )
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -1697,6 +1719,7 @@ class Handler(BaseHTTPRequestHandler):
         measurement = fields.get("measurement", [""])[0]
         if measurement in ("discharge", "gaugeHeight"):
             cfg["measurement"] = measurement
+        cfg["flip180"] = "flip180" in fields  # unchecked boxes are omitted entirely by browsers
         save_config(cfg)
         subprocess.Popen(["/usr/bin/python3", os.path.expanduser("~/river_display/river_display.py")])
         self._render(msg='<p class="msg">Saved - display is refreshing now.</p>')
@@ -1731,22 +1754,27 @@ DEFAULT_GAUGES = ${JSON.stringify(Object.fromEntries([1,2,3,4].map(b => {
       const g = opts.gauges.find(x => x.button === b);
       return [b, g ? { label: g.label, site_no: g.siteNo, measurement: g.measurement } : { label: '', site_no: '', measurement: 'discharge' }];
     })))}
+DEFAULT_FLIP180 = ${opts.flip180 ? 'True' : 'False'}
 PORT = 8080
 
-def load_gauges():
-    gauges = {str(k): dict(v) for k, v in DEFAULT_GAUGES.items()}
+def load_full_config():
+    """Everything in config.json as one dict, so saving one part (gauges
+    or orientation) never clobbers the other."""
+    cfg = {"gauges": {str(k): dict(v) for k, v in DEFAULT_GAUGES.items()}, "flip180": DEFAULT_FLIP180}
     try:
         with open(CONFIG_FILE) as f:
             saved = json.load(f)
-        gauges.update({k: v for k, v in saved.get("gauges", {}).items() if k in gauges})
+        cfg["gauges"].update({k: v for k, v in saved.get("gauges", {}).items() if k in cfg["gauges"]})
+        if "flip180" in saved:
+            cfg["flip180"] = bool(saved["flip180"])
     except (FileNotFoundError, json.JSONDecodeError, ValueError):
         pass
-    return gauges
+    return cfg
 
-def save_gauges(gauges):
+def save_full_config(cfg):
     os.makedirs(os.path.dirname(CONFIG_FILE), exist_ok=True)
     with open(CONFIG_FILE, "w") as f:
-        json.dump({"gauges": gauges}, f, indent=2)
+        json.dump(cfg, f, indent=2)
 
 def get_ip():
     try:
@@ -1775,7 +1803,8 @@ GAUGE_BLOCK = """<div class="gauge"><h2>Button {b}</h2>
 <option value="gaugeHeight" {height_sel}>Gauge height (ft)</option>
 </select></label></div>"""
 
-PAGE_BOTTOM = """<button type="submit">Save &amp; restart display</button>
+PAGE_BOTTOM = """<label class="checkrow"><input type="checkbox" name="flip180" value="1" {flip_checked}> Flip display 180° (for upside-down mounting)</label>
+<button type="submit">Save &amp; restart display</button>
 </form>
 <p class="hint">Find USGS site numbers at <a href="https://waterdata.usgs.gov/nwis/rt">waterdata.usgs.gov</a>.
 Saving restarts the display service, so the screen briefly blanks before showing the update.</p>
@@ -1783,7 +1812,8 @@ Saving restarts the display service, so the screen briefly blanks before showing
 
 class Handler(BaseHTTPRequestHandler):
     def _render(self, msg=""):
-        gauges = load_gauges()
+        cfg = load_full_config()
+        gauges = cfg["gauges"]
         blocks = "".join(
             GAUGE_BLOCK.format(
                 b=b, label=gauges[b]["label"], site_no=gauges[b]["site_no"],
@@ -1791,7 +1821,8 @@ class Handler(BaseHTTPRequestHandler):
                 height_sel="selected" if gauges[b]["measurement"] == "gaugeHeight" else "",
             ) for b in ("1", "2", "3", "4")
         )
-        body = PAGE_HEAD + PAGE_TOP.format(ip=get_ip(), msg=msg) + blocks + PAGE_BOTTOM
+        body = (PAGE_HEAD + PAGE_TOP.format(ip=get_ip(), msg=msg) + blocks
+                + PAGE_BOTTOM.format(flip_checked="checked" if cfg["flip180"] else ""))
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.end_headers()
@@ -1803,17 +1834,18 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         length = int(self.headers.get("Content-Length", 0))
         fields = parse_qs(self.rfile.read(length).decode("utf-8"))
-        gauges = load_gauges()
+        cfg = load_full_config()
         for b in ("1", "2", "3", "4"):
             label = fields.get(f"label{b}", [""])[0].strip()
             site_no = fields.get(f"site_no{b}", [""])[0].strip()
             measurement = fields.get(f"measurement{b}", [""])[0]
-            gauges[b] = {
+            cfg["gauges"][b] = {
                 "label": label[:18],
                 "site_no": site_no if site_no.isdigit() else "",
                 "measurement": measurement if measurement in ("discharge", "gaugeHeight") else "discharge",
             }
-        save_gauges(gauges)
+        cfg["flip180"] = "flip180" in fields  # unchecked boxes are omitted entirely by browsers
+        save_full_config(cfg)
         try:
             subprocess.run(["sudo", "-n", "systemctl", "restart", "river-display.service"], timeout=10)
             msg = '<p class="msg">Saved - display service restarting now.</p>'
