@@ -12,7 +12,7 @@ easy to find on your network.
 This guide assumes you've never set up a Raspberry Pi before. By the
 end you'll have a working display on your desk.
 
-**[→ Open the setup tool](https://inphenity.github.io/Stage-River-Monitor/)**
+**<a href="https://inphenity.github.io/Stage-River-Monitor/" target="_blank" rel="noopener">→ Open the setup tool</a>**
 to generate your install script — you'll come back to that in Step 4.
 
 ---
@@ -132,7 +132,7 @@ ssh <username>@<that-ip-address>
 
 ## Step 4 — Generate your install script
 
-Open the **[STAGE setup tool](https://inphenity.github.io/Stage-River-Monitor/)**
+Open the **<a href="https://inphenity.github.io/Stage-River-Monitor/" target="_blank" rel="noopener">STAGE setup tool</a>**
 in a browser on your computer (not the Pi). It's laid out as a numbered
 sequence of sections — work through them top to bottom:
 
