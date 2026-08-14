@@ -716,31 +716,17 @@ footer{ text-align:center; color: var(--ink-muted); font-family: var(--mono); fo
   // ==================================================================
   function buildPythonScriptSingle(opts){
     const trendFuncs = opts.trendArrow ? `
-TREND_LOOKBACK_HOURS = 12
-
-def get_trend(history, hours=TREND_LOOKBACK_HOURS):
-    """Compares the latest reading to whatever reading is closest to
-    (but not after) 'hours' ago, rather than a short recent-average -
-    that catches a slow, steady drift that a same-few-points comparison
-    would mostly wash out. Returns 'up', 'down', or 'flat'.
+def get_trend(history):
+    """Compares the latest reading to the one right before it - the last
+    two points USGS has published - rather than looking back over a
+    longer window. Returns 'up', 'down', or 'flat'.
     'history' is a list of (datetime, value) tuples, oldest first."""
     if len(history) < 2:
         return "flat"
-    latest_time, latest_value = history[-1]
-    target_time = latest_time - timedelta(hours=hours)
-    baseline = None
-    for ts, v in history:
-        if ts <= target_time:
-            baseline = v
-        else:
-            break
-    if baseline is None:
-        # not enough history yet to reach back a full window (e.g. right
-        # after first setup) - fall back to the oldest point available
-        # rather than just reporting flat
-        baseline = history[0][1]
-    threshold = max(abs(baseline) * 0.02, 0.5)
-    diff = latest_value - baseline
+    _, latest_value = history[-1]
+    _, previous_value = history[-2]
+    threshold = max(abs(previous_value) * 0.02, 0.5)
+    diff = latest_value - previous_value
     if diff > threshold:
         return "up"
     elif diff < -threshold:
@@ -1004,31 +990,17 @@ if __name__ == "__main__":
     const firstButton = gauges.length ? gauges[0].button : 1;
 
     const trendFuncs = opts.trendArrow ? `
-TREND_LOOKBACK_HOURS = 12
-
-def get_trend(history, hours=TREND_LOOKBACK_HOURS):
-    """Compares the latest reading to whatever reading is closest to
-    (but not after) 'hours' ago, rather than a short recent-average -
-    that catches a slow, steady drift that a same-few-points comparison
-    would mostly wash out. Returns 'up', 'down', or 'flat'.
+def get_trend(history):
+    """Compares the latest reading to the one right before it - the last
+    two points USGS has published - rather than looking back over a
+    longer window. Returns 'up', 'down', or 'flat'.
     'history' is a list of (datetime, value) tuples, oldest first."""
     if len(history) < 2:
         return "flat"
-    latest_time, latest_value = history[-1]
-    target_time = latest_time - timedelta(hours=hours)
-    baseline = None
-    for ts, v in history:
-        if ts <= target_time:
-            baseline = v
-        else:
-            break
-    if baseline is None:
-        # not enough history yet to reach back a full window (e.g. right
-        # after first setup) - fall back to the oldest point available
-        # rather than just reporting flat
-        baseline = history[0][1]
-    threshold = max(abs(baseline) * 0.02, 0.5)
-    diff = latest_value - baseline
+    _, latest_value = history[-1]
+    _, previous_value = history[-2]
+    threshold = max(abs(previous_value) * 0.02, 0.5)
+    diff = latest_value - previous_value
     if diff > threshold:
         return "up"
     elif diff < -threshold:
