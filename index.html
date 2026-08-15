@@ -916,6 +916,27 @@ def get_ip_suffix():
     except Exception:
         return "---"
 
+def draw_wifi_icon(draw, cx, cy):
+    """Small WiFi glyph (a dot with upward-opening arcs fanning above
+    it) next to the IP suffix, so it reads as network info at a glance
+    rather than an unexplained number. cx/cy is the icon's bottom
+    vertex - the dot. ~9px tall total, so it fits in tight corners."""
+    draw.ellipse((cx - 1, cy - 1, cx + 1, cy + 1), fill=0)
+    for r in (3, 6, 9):
+        draw.arc((cx - r, cy - r, cx + r, cy + r), 180, 360, fill=0, width=1)
+
+def truncate_to_width(draw, text, font, max_width):
+    """Shortens text with a trailing ellipsis if it's wider than
+    max_width, rather than letting it run into whatever's drawn next to
+    it - a long display label combined with a wide font can otherwise
+    overlap the "Updated" timestamp on the same row."""
+    if draw.textlength(text, font=font) <= max_width:
+        return text
+    trimmed = text
+    while trimmed and draw.textlength(trimmed + "…", font=font) > max_width:
+        trimmed = trimmed[:-1]
+    return (trimmed + "…") if trimmed else "…"
+
 def get_run_count():
     try:
         with open(STATE_FILE, "r") as f:
@@ -1019,13 +1040,18 @@ ${refreshLogic}
     font_title = ImageFont.truetype(FONT_PATH_BOLD, 14)
     font_body = ImageFont.truetype(FONT_PATH_BOLD, 30)
     font_small = ImageFont.truetype(FONT_PATH_REG, 10)
-    draw.text((5, 1), label, font=font_title, fill=0)
-    # Right-aligned so it always sits at the display's edge regardless of
-    # label length - also carries the last 3 digits of the Pi's IP, so
-    # it's easy to tell which device this is on a network with several.
+    # "Updated" text is computed first since it's right-aligned to a
+    # fixed edge; the label is then measured against whatever space that
+    # leaves and truncated with an ellipsis if it would otherwise run
+    # into it - a long label combined with a wide font could overlap it
+    # if drawn independently, since neither was aware of the other.
     refresh_str = datetime.now().strftime("Updated %I:%M %p") + f"  ·.{get_ip_suffix()}"
     refresh_w = draw.textlength(refresh_str, font=font_small)
-    draw.text((245 - refresh_w, 2), refresh_str, font=font_small, fill=0)
+    refresh_x = 245 - refresh_w
+    display_label = truncate_to_width(draw, label, font_title, refresh_x - 8)
+    draw.text((5, 1), display_label, font=font_title, fill=0)
+    draw.text((refresh_x, 2), refresh_str, font=font_small, fill=0)
+    draw_wifi_icon(draw, 236, 23)
     draw.text((5, 16), f"{discharge} {unit}", font=font_body, fill=0)
     ts_full = format_timestamp(timestamp)
     ts_date, _, ts_time = ts_full.partition(" ")
@@ -1227,6 +1253,27 @@ def get_ip_suffix():
     except Exception:
         return "---"
 
+def draw_wifi_icon(draw, cx, cy):
+    """Small WiFi glyph (a dot with upward-opening arcs fanning above
+    it) next to the IP suffix, so it reads as network info at a glance
+    rather than an unexplained number. cx/cy is the icon's bottom
+    vertex - the dot. ~9px tall total, so it fits in tight corners."""
+    draw.ellipse((cx - 1, cy - 1, cx + 1, cy + 1), fill=0)
+    for r in (3, 6, 9):
+        draw.arc((cx - r, cy - r, cx + r, cy + r), 180, 360, fill=0, width=1)
+
+def truncate_to_width(draw, text, font, max_width):
+    """Shortens text with a trailing ellipsis if it's wider than
+    max_width, rather than letting it run into whatever's drawn next to
+    it - a long display label combined with a wide font can otherwise
+    overlap the IP suffix on the same row."""
+    if draw.textlength(text, font=font) <= max_width:
+        return text
+    trimmed = text
+    while trimmed and draw.textlength(trimmed + "…", font=font) > max_width:
+        trimmed = trimmed[:-1]
+    return (trimmed + "…") if trimmed else "…"
+
 HISTORY_PERIOD = "P2D"
 REFRESH_MINUTES = set(${JSON.stringify(opts.minutes)})
 ACTIVE_HOUR_START = ${opts.hourStart}
@@ -1358,11 +1405,16 @@ def render(button_num, full_refresh=True):
         # than one running. Kept off Row 3 below on purpose: that row is
         # already a tight fit between the reading's own "as of" timestamp
         # and "Updated H:MM", and appending the IP there pushed the two
-        # into each other.
-        draw.text((8, 4), entry["label"], font=font_title, fill=0)
+        # into each other. The IP suffix is measured first (fixed to the
+        # right edge) and the label is truncated with an ellipsis if it
+        # would otherwise run into it.
         ip_str = f".{get_ip_suffix()}"
         ip_w = draw.textlength(ip_str, font=font_small)
-        draw.text((w - 8 - ip_w, 6), ip_str, font=font_small, fill=0)
+        ip_x = w - 8 - ip_w
+        display_label = truncate_to_width(draw, entry["label"], font_title, ip_x - 8)
+        draw.text((8, 4), display_label, font=font_title, fill=0)
+        draw.text((ip_x, 6), ip_str, font=font_small, fill=0)
+        draw_wifi_icon(draw, w - 16, 27)
 
         # Row 2: the big reading. Trend arrow (if enabled) is placed
         # dynamically just past the end of this text via textlength, and
