@@ -157,6 +157,20 @@ input::placeholder{ color: #4F7386; }
 .gauge-row .field-hint{ margin-top: 4px; }
 .gauge-empty-hint{ font-size: 12px; color: var(--ink-muted); font-style: italic; }
 
+/* "Test this site number" - live USGS check */
+.test-site-btn{
+  font-family: var(--mono); font-size: 12px; letter-spacing:0.03em; padding: 7px 12px; margin-top:8px;
+  border: 1px solid var(--line-bright); border-radius: var(--radius); background: transparent;
+  color: var(--line-bright); cursor:pointer; white-space:nowrap;
+}
+.test-site-btn:hover{ background: rgba(126,200,227,0.1); }
+.test-site-btn:disabled{ opacity:0.5; cursor:default; background:none; }
+.gauge-test-result{ font-size: 12.5px; margin-top:8px; line-height:1.5; display:none; }
+.gauge-test-result.pending{ display:block; color: var(--ink-muted); }
+.gauge-test-result.success{ display:block; color: var(--good); }
+.gauge-test-result.error{ display:block; color: var(--danger); }
+.gauge-test-result .gauge-test-time{ color: var(--ink-muted); }
+
 /* WiFi network rows (dynamic, add-as-many) */
 .wifi-row{
   border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg-panel-2);
@@ -296,6 +310,8 @@ footer{ text-align:center; color: var(--ink-muted); font-family: var(--mono); fo
             <div class="field-label">USGS site number <span class="req">*</span></div>
             <input type="text" id="siteNo" placeholder="e.g. 02169000" pattern="[0-9]{8,15}">
             <div class="field-hint">Find yours at <a href="https://waterdata.usgs.gov/nwis/rt" target="_blank" rel="noopener">waterdata.usgs.gov/nwis/rt</a> — it's the number in the gauge's URL. Must report the measurement you pick below.</div>
+            <button type="button" class="test-site-btn" id="testSiteBtn">Test this site number</button>
+            <div class="gauge-test-result" id="testSiteResult"></div>
           </div>
           <div class="field">
             <div class="field-label">Measurement</div>
@@ -682,6 +698,8 @@ footer{ text-align:center; color: var(--ink-muted); font-family: var(--mono); fo
           <option value="gaugeHeight">Gauge height (ft)</option>
         </select>
       </div>
+      <button type="button" class="test-site-btn" id="gauge${b}TestBtn">Test this site number</button>
+      <div class="gauge-test-result" id="gauge${b}TestResult"></div>
     `;
     gaugeRowsEl.appendChild(row);
   }
@@ -706,6 +724,61 @@ footer{ text-align:center; color: var(--ink-muted); font-family: var(--mono); fo
       });
     }
     return gauges;
+  }
+
+  // ---- "Test this site number" - live USGS check, so a mistyped or
+  // wrong site number gets caught here instead of after SSHing into a
+  // Pi. Calls the same public Instantaneous Values API the generated
+  // script uses at runtime, directly from the browser (USGS's service
+  // explicitly supports CORS, so no proxy is needed). ----
+  async function testUsgsSite(siteNoRaw, measurement, resultEl){
+    const site = (siteNoRaw || '').trim();
+    if (!/^[0-9]{8,15}$/.test(site)){
+      resultEl.className = 'gauge-test-result error';
+      resultEl.textContent = 'Enter a valid USGS site number first (8-15 digits, no spaces).';
+      return;
+    }
+    const paramCode = measurement === 'gaugeHeight' ? '00065' : '00060';
+    const measurementName = measurement === 'gaugeHeight' ? 'gauge height' : 'discharge';
+    const unitLabel = measurement === 'gaugeHeight' ? 'ft' : 'cfs';
+    resultEl.className = 'gauge-test-result pending';
+    resultEl.textContent = 'Checking with USGS…';
+    try {
+      const url = `https://waterservices.usgs.gov/nwis/iv/?format=json&sites=${encodeURIComponent(site)}&parameterCd=${paramCode}&siteStatus=active`;
+      const resp = await fetch(url);
+      if (!resp.ok){
+        resultEl.className = 'gauge-test-result error';
+        resultEl.textContent = `USGS returned an error (HTTP ${resp.status}) - try again in a moment.`;
+        return;
+      }
+      const data = await resp.json();
+      const series = data && data.value && data.value.timeSeries;
+      if (!series || !series.length){
+        resultEl.className = 'gauge-test-result error';
+        resultEl.textContent = `No active site found reporting ${measurementName} for that number - double check it at waterdata.usgs.gov, or try the other measurement.`;
+        return;
+      }
+      const s = series[0];
+      const siteName = (s.sourceInfo && s.sourceInfo.siteName) || 'Unknown site name';
+      const latest = s.values[0].value[0];
+      const val = parseFloat(latest.value);
+      const when = new Date(latest.dateTime);
+      const whenStr = isNaN(when.getTime()) ? latest.dateTime : when.toLocaleString();
+      resultEl.className = 'gauge-test-result success';
+      resultEl.innerHTML = `&#10003; <b>${siteName}</b> - ${val} ${unitLabel} <span class="gauge-test-time">(as of ${whenStr})</span>`;
+    } catch (err){
+      resultEl.className = 'gauge-test-result error';
+      resultEl.textContent = 'Could not reach USGS - check your internet connection and try again.';
+    }
+  }
+
+  $('testSiteBtn').addEventListener('click', () => {
+    testUsgsSite($('siteNo').value, $('measurement').value, $('testSiteResult'));
+  });
+  for (let b = 1; b <= 4; b++){
+    $(`gauge${b}TestBtn`).addEventListener('click', () => {
+      testUsgsSite($(`gauge${b}Site`).value, $(`gauge${b}Measurement`).value, $(`gauge${b}TestResult`));
+    });
   }
 
   function escPy(s){ return s.replace(/\\/g,'\\\\').replace(/"/g,'\\"'); }
