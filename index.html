@@ -678,7 +678,7 @@ footer{ text-align:center; color: var(--ink-muted); font-family: var(--mono); fo
     $('panel27VariantField').style.display = (val === '2.7') ? '' : 'none';
   }
   document.querySelectorAll('input[name="displayHardware"]').forEach(r => {
-    r.addEventListener('change', () => { syncHwCards(); render(); });
+    r.addEventListener('change', () => { syncHwCards(); syncWifiOffRow(); render(); });
   });
   $('panel27Variant').addEventListener('change', render);
 
@@ -738,8 +738,13 @@ footer{ text-align:center; color: var(--ink-muted); font-family: var(--mono); fo
   // wrong site number gets caught here instead of after SSHing into a
   // Pi. Calls the same public Instantaneous Values API the generated
   // script uses at runtime, directly from the browser (USGS's service
-  // explicitly supports CORS, so no proxy is needed). ----
-  async function testUsgsSite(siteNoRaw, measurement, resultEl){
+  // explicitly supports CORS, so no proxy is needed). The button is
+  // disabled for the duration of its own request - without that, a
+  // rapid click-edit-click could let an earlier (now-stale) request
+  // resolve AFTER a newer one and overwrite it with a result for the
+  // wrong site number. Disabling means only one request per button can
+  // ever be in flight, so there's nothing left to race. ----
+  async function testUsgsSite(siteNoRaw, measurement, resultEl, btn){
     const site = (siteNoRaw || '').trim();
     if (!/^[0-9]{8,15}$/.test(site)){
       resultEl.className = 'gauge-test-result error';
@@ -751,6 +756,9 @@ footer{ text-align:center; color: var(--ink-muted); font-family: var(--mono); fo
     const unitLabel = measurement === 'gaugeHeight' ? 'ft' : 'cfs';
     resultEl.className = 'gauge-test-result pending';
     resultEl.textContent = 'Checking with USGS…';
+    const originalLabel = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Checking…';
     try {
       const url = `https://waterservices.usgs.gov/nwis/iv/?format=json&sites=${encodeURIComponent(site)}&parameterCd=${paramCode}&siteStatus=active`;
       const resp = await fetch(url);
@@ -777,15 +785,18 @@ footer{ text-align:center; color: var(--ink-muted); font-family: var(--mono); fo
     } catch (err){
       resultEl.className = 'gauge-test-result error';
       resultEl.textContent = 'Could not reach USGS - check your internet connection and try again.';
+    } finally {
+      btn.disabled = false;
+      btn.textContent = originalLabel;
     }
   }
 
   $('testSiteBtn').addEventListener('click', () => {
-    testUsgsSite($('siteNo').value, $('measurement').value, $('testSiteResult'));
+    testUsgsSite($('siteNo').value, $('measurement').value, $('testSiteResult'), $('testSiteBtn'));
   });
   for (let b = 1; b <= 4; b++){
     $(`gauge${b}TestBtn`).addEventListener('click', () => {
-      testUsgsSite($(`gauge${b}Site`).value, $(`gauge${b}Measurement`).value, $(`gauge${b}TestResult`));
+      testUsgsSite($(`gauge${b}Site`).value, $(`gauge${b}Measurement`).value, $(`gauge${b}TestResult`), $(`gauge${b}TestBtn`));
     });
   }
 
@@ -2640,9 +2651,18 @@ echo "Change the gauge anytime at: http://$(hostname -I | awk '{print $1}'):8080
   syncConfigPassword();
 
   // ---- 24/7 mode: disables the active-hours window and, since there's no
-  // "outside" window left, forces the WiFi-curfew toggle off too ----
+  // "outside" window left, forces the WiFi-curfew toggle off too. The
+  // WiFi curfew is also unavailable in multi-gauge mode - the display
+  // service needs WiFi around the clock to respond to button presses,
+  // so cutting it on a schedule would silently break that. ----
   const alwaysOnEl = $('alwaysOn');
   const wifiOffRow = $('wifiOffRow');
+  function syncWifiOffRow(){
+    const isMulti = document.querySelector('input[name="displayHardware"]:checked').value === '2.7';
+    const disabled = alwaysOnEl.checked || isMulti;
+    wifiOffRow.classList.toggle('disabled', disabled);
+    if (disabled) $('wifiOff').checked = false;
+  }
   function syncAlwaysOn(){
     const on = alwaysOnEl.checked;
     hourStart.disabled = on;
@@ -2650,8 +2670,7 @@ echo "Change the gauge anytime at: http://$(hostname -I | awk '{print $1}'):8080
     $('activeHoursHint').textContent = on
       ? 'Running around the clock — refreshes happen every scheduled minute, all day.'
       : 'Display only updates between these hours. Outside this window, it just sits showing the last reading.';
-    wifiOffRow.classList.toggle('disabled', on);
-    if (on) $('wifiOff').checked = false;
+    syncWifiOffRow();
   }
   alwaysOnEl.addEventListener('change', () => { syncAlwaysOn(); render(); });
   syncAlwaysOn();
