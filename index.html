@@ -75,6 +75,7 @@ h1 span{ color: var(--amber); }
 }
 .field-label .req{ color: var(--amber); }
 .field-hint{ font-size: 12.5px; color: var(--ink-muted); margin-top: 6px; line-height:1.5; }
+.field-hint.auto-generated{ color: var(--good); font-weight:600; font-family: var(--mono); }
 input[type="text"], input[type="number"], input[type="password"], select{
   width:100%; background: var(--bg-panel-2); border: 1px solid var(--line); color: var(--ink);
   font-family: var(--mono); font-size: 14.5px; padding: 10px 12px; border-radius: var(--radius); outline: none;
@@ -263,6 +264,13 @@ footer{ text-align:center; color: var(--ink-muted); font-family: var(--mono); fo
               <div class="field-hint">Required — WPA2 needs 8+ characters. Anyone who knows this can join the hotspot while it's active, so don't reuse a password you care about.</div>
               <div class="field-hint toggle-warn" id="fallbackApWarning" style="display:none;">Password needs to be at least 8 characters — the hotspot won't be set up until it is.</div>
             </div>
+          </div>
+          <div class="field" style="margin-top:18px;">
+            <div class="field-label">Web config page password <span class="req">*</span></div>
+            <input type="text" id="configPassword" maxlength="63" placeholder="Leave blank to auto-generate one">
+            <div class="field-hint">Required to open the web config page at <code>:8080</code> — the browser will prompt for it. This is what keeps that page from being reachable by anyone who finds the Pi's address, which matters a lot if you ever expose it beyond your own network (e.g. a port forward). Leave blank and STAGE generates a random one for you — copy it down before you leave this page, since it won't be shown again.</div>
+            <div class="field-hint" id="configPasswordAutoHint" style="display:none;"></div>
+            <div class="field-hint toggle-warn" id="configPasswordWarning" style="display:none;">Password needs to be at least 8 characters.</div>
           </div>
         </div>
       </div>
@@ -1770,6 +1778,76 @@ fetch("/wifi-scan").then(function(r){ return r.json(); }).then(function(names){
             return
 `;
 
+  // Auth + CSRF protection, shared by both single and multi config
+  // servers - always included (not conditional), since the config page
+  // exists unconditionally and this is the baseline hardening for it:
+  //   - HTTP Basic Auth stops anyone who doesn't know the password
+  //     from reaching the page at all - the main defense if this ever
+  //     ends up reachable from outside the local network.
+  //   - The custom-header check stops "blind" CSRF: a malicious page
+  //     elsewhere silently auto-submitting a form here. A plain HTML
+  //     <form> cannot set a custom header - only this page's own
+  //     JavaScript can - and browsers resend cached Basic Auth
+  //     credentials on EVERY request to an origin regardless of what
+  //     triggered it, so the auth check alone would not stop this.
+  const AUTH_PY_FUNCS = `
+def check_auth(handler):
+    auth = handler.headers.get("Authorization", "")
+    if auth.startswith("Basic "):
+        try:
+            decoded = base64.b64decode(auth[6:]).decode("utf-8")
+            user, _, password = decoded.partition(":")
+        except Exception:
+            user, password = "", ""
+        if hmac.compare_digest(user, AUTH_USER) and hmac.compare_digest(password, AUTH_PASS):
+            return True
+    handler.send_response(401)
+    handler.send_header("WWW-Authenticate", 'Basic realm="River display config"')
+    handler.send_header("Content-Type", "text/plain; charset=utf-8")
+    handler.end_headers()
+    handler.wfile.write(b"Password required.")
+    return False
+
+def check_csrf_header(handler):
+    if handler.headers.get("X-Requested-With") != "XMLHttpRequest":
+        handler.send_response(403)
+        handler.send_header("Content-Type", "text/plain; charset=utf-8")
+        handler.end_headers()
+        handler.wfile.write(b"Missing required header - use the page's own form, not a direct link.")
+        return False
+    return True
+`;
+
+  // Intercepts this page's own form submissions to add the header
+  // check_csrf_header() requires, then swaps in the server's response
+  // HTML in place - keeps the server side as plain HTML forms (no
+  // JSON API needed) while still closing the CSRF gap. Applies to
+  // every <form> on the page generically (the main gauge/flip form,
+  // and the WiFi-join form when present), since it's added once here
+  // rather than duplicated per form.
+  const FORM_INTERCEPT_HTML = `<script>
+document.querySelectorAll("form").forEach(function(form){
+  form.addEventListener("submit", async function(e){
+    e.preventDefault();
+    var btn = form.querySelector("button[type=submit]");
+    var originalText = btn ? btn.textContent : "";
+    if (btn){ btn.disabled = true; btn.textContent = "Saving\u2026"; }
+    try {
+      var resp = await fetch(form.action, {
+        method: "POST",
+        headers: {"X-Requested-With": "XMLHttpRequest"},
+        body: new URLSearchParams(new FormData(form))
+      });
+      var html = await resp.text();
+      document.open(); document.write(html); document.close();
+    } catch (err) {
+      alert("Save failed - check your connection and try again.");
+      if (btn){ btn.disabled = false; btn.textContent = originalText; }
+    }
+  });
+});
+<${''}/script>`;
+
   function buildConfigServerScriptSingle(opts){
     const apEnabled = opts.fallbackAp && opts.fallbackApPassword && opts.fallbackApPassword.length >= 8;
     return `#!/usr/bin/env python3
@@ -1784,7 +1862,9 @@ one immediate run so the change shows up right away).
 import json
 import os
 import socket
-import subprocess${apEnabled ? '\nimport threading' : ''}
+import subprocess
+import base64
+import hmac${apEnabled ? '\nimport threading' : ''}
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import parse_qs
 
@@ -1792,6 +1872,8 @@ CONFIG_FILE = os.path.expanduser("~/river_display/config.json")
 DEFAULTS = {"site_no": "${opts.siteNo}", "measurement": "${opts.measurement}",
             "label": "${escPy(opts.label)}", "flip180": ${opts.flip180 ? 'True' : 'False'}}
 PORT = 8080
+AUTH_USER = "stage"
+AUTH_PASS = "${escPy(opts.configPassword)}"
 
 def load_config():
     cfg = dict(DEFAULTS)
@@ -1822,7 +1904,7 @@ def get_ip():
         return ip
     except Exception:
         return "unknown"
-${apEnabled ? WIFI_PY_FUNCS + '\nWIFI_FORM_HTML = """' + WIFI_FORM_HTML + '"""' : ''}
+${AUTH_PY_FUNCS}${apEnabled ? WIFI_PY_FUNCS + '\nWIFI_FORM_HTML = """' + WIFI_FORM_HTML + '"""' : ''}
 PAGE_HEAD = """<!DOCTYPE html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>River display config</title><style>${CONFIG_PAGE_CSS}</style></head><body>"""
@@ -1841,7 +1923,8 @@ PAGE_FORM = """<h1>{label}</h1><p class="sub">Device IP: <span class="ip">{ip}</
 </form>
 <p class="hint">Find USGS site numbers at <a href="https://waterdata.usgs.gov/nwis/rt">waterdata.usgs.gov</a>.</p>"""
 
-PAGE_TAIL = """</body></html>"""
+PAGE_TAIL = """${FORM_INTERCEPT_HTML}
+</body></html>"""
 
 class Handler(BaseHTTPRequestHandler):
     def _render(self, msg=""):
@@ -1860,9 +1943,15 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body.encode("utf-8"))
 
     def do_GET(self):
+        if not check_auth(self):
+            return
 ${apEnabled ? WIFI_ROUTES_PY : ''}        self._render()
 
     def do_POST(self):
+        if not check_auth(self):
+            return
+        if not check_csrf_header(self):
+            return
 ${apEnabled ? WIFI_POST_PY : ''}        length = int(self.headers.get("Content-Length", 0))
         fields = parse_qs(self.rfile.read(length).decode("utf-8"))
         cfg = load_config()
@@ -1902,7 +1991,9 @@ so the running display picks up the change immediately.
 import json
 import os
 import socket
-import subprocess${apEnabled ? '\nimport threading' : ''}
+import subprocess
+import base64
+import hmac${apEnabled ? '\nimport threading' : ''}
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import parse_qs
 
@@ -1913,6 +2004,8 @@ DEFAULT_GAUGES = ${JSON.stringify(Object.fromEntries([1,2,3,4].map(b => {
     })))}
 DEFAULT_FLIP180 = ${opts.flip180 ? 'True' : 'False'}
 PORT = 8080
+AUTH_USER = "stage"
+AUTH_PASS = "${escPy(opts.configPassword)}"
 
 def load_full_config():
     """Everything in config.json as one dict, so saving one part (gauges
@@ -1943,7 +2036,7 @@ def get_ip():
         return ip
     except Exception:
         return "unknown"
-${apEnabled ? WIFI_PY_FUNCS + '\nWIFI_FORM_HTML = """' + WIFI_FORM_HTML + '"""' : ''}
+${AUTH_PY_FUNCS}${apEnabled ? WIFI_PY_FUNCS + '\nWIFI_FORM_HTML = """' + WIFI_FORM_HTML + '"""' : ''}
 PAGE_HEAD = """<!DOCTYPE html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>River display config</title><style>${CONFIG_PAGE_CSS}</style></head><body>"""
@@ -1966,7 +2059,8 @@ PAGE_BOTTOM = """<label class="checkrow"><input type="checkbox" name="flip180" v
 <p class="hint">Find USGS site numbers at <a href="https://waterdata.usgs.gov/nwis/rt">waterdata.usgs.gov</a>.
 Saving restarts the display service, so the screen briefly blanks before showing the update.</p>"""
 
-PAGE_TAIL = """</body></html>"""
+PAGE_TAIL = """${FORM_INTERCEPT_HTML}
+</body></html>"""
 
 class Handler(BaseHTTPRequestHandler):
     def _render(self, msg=""):
@@ -1988,9 +2082,15 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body.encode("utf-8"))
 
     def do_GET(self):
+        if not check_auth(self):
+            return
 ${apEnabled ? WIFI_ROUTES_PY : ''}        self._render()
 
     def do_POST(self):
+        if not check_auth(self):
+            return
+        if not check_csrf_header(self):
+            return
 ${apEnabled ? WIFI_POST_PY : ''}        length = int(self.headers.get("Content-Length", 0))
         fields = parse_qs(self.rfile.read(length).decode("utf-8"))
         cfg = load_full_config()
@@ -2280,6 +2380,7 @@ echo "Change the gauge anytime at: http://$(hostname -I | awk '{print $1}'):8080
       fallbackAp: $('fallbackAp').checked,
       fallbackApSsid: $('fallbackApSsid').value.trim() || slugifySsid(label),
       fallbackApPassword: $('fallbackApPassword').value,
+      configPassword: $('configPassword').value.trim() || autoConfigPassword || generateRandomPassword(),
     };
   }
 
@@ -2358,6 +2459,7 @@ echo "Change the gauge anytime at: http://$(hostname -I | awk '{print $1}'):8080
     }
     rows.push(
       ['Web config page', 'http://<device-ip>:8080'],
+      ['Web config password', opts.configPassword],
       ['WiFi networks', opts.wifiNetworks.length ? `${opts.wifiNetworks.length} added` : 'none added'],
       ['Refresh times', ':' + opts.minutes.map(m=>String(m).padStart(2,'0')).join(', :') || '—'],
       ['Active hours', opts.alwaysOn ? '24/7 (always on)' : `${opts.hourStart}:00–${opts.hourEnd}:00`],
@@ -2376,8 +2478,8 @@ echo "Change the gauge anytime at: http://$(hostname -I | awk '{print $1}'):8080
     const apNote = opts.fallbackAp
       ? ' and the fallback setup hotspot'
       : '';
-    const lastStepMulti = `The last 3 digits of the Pi's IP now show on the display itself, with a small WiFi icon underneath. Visit <code>http://&lt;that-ip&gt;:8080</code> from any browser on the same network to change a gauge or flip the display${opts.fallbackAp ? ', or to join a new WiFi network if the Pi ever loses the one it has' : ''} — no SSH required.`;
-    const lastStepSingle = `The last 3 digits of the Pi's IP now show on the display itself, with a small WiFi icon underneath. Visit <code>http://&lt;that-ip&gt;:8080</code> from any browser on the same network to change the gauge or flip the display${opts.fallbackAp ? ', or to join a new WiFi network if the Pi ever loses the one it has' : ''} — no SSH required.`;
+    const lastStepMulti = `The last 3 digits of the Pi's IP now show on the display itself, with a small WiFi icon underneath. Visit <code>http://&lt;that-ip&gt;:8080</code> from any browser on the same network to change a gauge or flip the display${opts.fallbackAp ? ', or to join a new WiFi network if the Pi ever loses the one it has' : ''} — no SSH required. The browser will prompt for a username and password: username is <code>stage</code>, password is whatever you set (or was auto-generated) above.`;
+    const lastStepSingle = `The last 3 digits of the Pi's IP now show on the display itself, with a small WiFi icon underneath. Visit <code>http://&lt;that-ip&gt;:8080</code> from any browser on the same network to change the gauge or flip the display${opts.fallbackAp ? ', or to join a new WiFi network if the Pi ever loses the one it has' : ''} — no SSH required. The browser will prompt for a username and password: username is <code>stage</code>, password is whatever you set (or was auto-generated) above.`;
     if (opts.displayHardware === '2.7'){
       stepsEl.innerHTML = `<ol>
         <li>With the Pi powered off, wire the e-paper HAT (and battery, if using one) to the 40-pin header — do this before the first boot if you haven't powered it on yet. Then power on and give it a minute to finish booting.</li>
@@ -2453,6 +2555,41 @@ echo "Change the gauge anytime at: http://$(hostname -I | awk '{print $1}'):8080
   $('fallbackApSsid').addEventListener('input', render);
   $('fallbackApPassword').addEventListener('input', () => { syncFallbackAp(); render(); });
   syncFallbackAp();
+
+  // ---- Web config page password: required (protects :8080 against
+  // outside/unauthenticated access). Auto-generated via the Web Crypto
+  // API if left blank, rather than falling back to any fixed default -
+  // a predictable fallback password baked into a public open-source
+  // tool would defeat the entire point. The generated value is cached
+  // in autoConfigPassword so it stays stable across re-renders (e.g.
+  // typing in an unrelated field) instead of changing on every
+  // keystroke, which would make it impossible to actually copy down. ----
+  let autoConfigPassword = null;
+  function generateRandomPassword(length = 12){
+    // Excludes visually-ambiguous characters (0/O, 1/l/I) since this is
+    // meant to be hand-copied and retyped once into a browser prompt.
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
+    const bytes = new Uint32Array(length);
+    crypto.getRandomValues(bytes);
+    return Array.from(bytes, b => chars[b % chars.length]).join('');
+  }
+  const configPasswordAutoHint = $('configPasswordAutoHint');
+  const configPasswordWarning = $('configPasswordWarning');
+  function syncConfigPassword(){
+    const typed = $('configPassword').value.trim();
+    if (!typed){
+      if (!autoConfigPassword) autoConfigPassword = generateRandomPassword();
+      configPasswordAutoHint.textContent = `Auto-generated: ${autoConfigPassword} — copy this down now.`;
+      configPasswordAutoHint.className = 'field-hint auto-generated';
+      configPasswordAutoHint.style.display = '';
+      configPasswordWarning.style.display = 'none';
+    } else {
+      configPasswordAutoHint.style.display = 'none';
+      configPasswordWarning.style.display = typed.length < 8 ? '' : 'none';
+    }
+  }
+  $('configPassword').addEventListener('input', () => { syncConfigPassword(); render(); });
+  syncConfigPassword();
 
   // ---- 24/7 mode: disables the active-hours window and, since there's no
   // "outside" window left, forces the WiFi-curfew toggle off too ----

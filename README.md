@@ -141,7 +141,7 @@ Open the **<a href="https://inphenity.github.io/Stage-River-Monitor/" target="_b
 in a browser on your computer (not the Pi). It's laid out as a numbered
 sequence of sections — work through them top to bottom:
 
-- **00 — Network** — skip this if the Pi's already on WiFi (it is, from Step 1). Add networks here for the Pi to join *in addition* to that one — a work WiFi, a mobile hotspot, a backup network. Also where the **fallback setup hotspot** lives (on by default) — if the Pi ever can't reach any known WiFi network, it broadcasts its own network so you can fix WiFi from a phone instead of re-flashing the SD card. Give it a name and an 8+ character password here; see [If WiFi ever stops working](#if-wifi-ever-stops-working) below for how it's used.
+- **00 — Network** — skip the WiFi-networks part if the Pi's already on WiFi (it is, from Step 1); add networks here for the Pi to join *in addition* to that one — a work WiFi, a mobile hotspot, a backup network. Also where the **fallback setup hotspot** lives (on by default) — if the Pi ever can't reach any known WiFi network, it broadcasts its own network so you can fix WiFi from a phone instead of re-flashing the SD card. Give it a name and an 8+ character password here; see [If WiFi ever stops working](#if-wifi-ever-stops-working) below for how it's used. This section also has the **web config page password** — required, since it's what keeps `:8080` from being reachable by anyone else on the network. Leave it blank and STAGE generates a random one for you (shown right there and in the spec list) — copy it down before you leave the page.
 - **01 — Display hardware** — pick your HAT (2.13" or 2.7"), and for the 2.7" confirm the board revision printed on the back (V1 vs V2) — picking the wrong one leaves the panel blank with no error.
 - **02 — Station / Gauges** — find your river's USGS site number at [waterdata.usgs.gov/nwis/rt](https://waterdata.usgs.gov/nwis/rt/) (it's the number in that gauge's URL), then choose discharge or gauge height — check your site's page for which one it actually publishes. Click **Test this site number** after entering it — the tool checks it against USGS live, right in your browser, so a typo or a site that doesn't report your chosen measurement gets caught here instead of after you're already SSH'd into a Pi.
 - **03 — Display behavior** — defaults are sensible; adjust as you like.
@@ -211,6 +211,11 @@ Then, from any browser on the same network:
 http://<the-pi's-ip>:8080
 ```
 
+The browser will prompt for a username and password — username is
+`stage`, password is whatever you set (or was auto-generated) in the
+setup tool's Network section. This is what keeps the page from being
+usable by anyone else who happens to be on the same network as the Pi.
+
 - **2.13" (single-gauge):** change the label, USGS site number,
   measurement, or the 180° flip, and the display refreshes immediately
   after you save.
@@ -246,7 +251,10 @@ re-flashing required to fix it:
    `<display label>-setup`), using the password you set there. Expect
    a "no internet" warning on this network — that's normal, it's
    local-only.
-2. Open `http://10.42.0.1:8080` in a browser.
+2. Open `http://10.42.0.1:8080` in a browser. It'll prompt for a
+   username and password — username `stage`, password whatever you set
+   (or was auto-generated) for the web config page in the setup tool.
+   This isn't the same as the hotspot's own WiFi password from step 1.
 3. Use the **"Join a WiFi network"** section to pick your (real)
    network and enter its password, then submit.
 4. The Pi switches over and the hotspot disappears within a few
@@ -300,6 +308,14 @@ running, `journalctl -u river-display-config -n 50` will show why.
 On the 2.7" HAT, if saving doesn't restart the display, the sudoers
 rule the installer sets up for that one restart command may not have
 applied — re-running the install script re-adds it.
+
+**Forgot the web config page password**
+It's baked into `config_server.py` in plain text (same as everything
+else the install script generates) — `grep AUTH_PASS
+~/river_display/config_server.py` over SSH will show it. There's no
+recovery flow beyond that; if you want a new one, edit that line
+directly and restart the service: `sudo systemctl restart
+river-display-config`.
 
 **Fallback hotspot never shows up when WiFi is down**
 Confirm you left "Fallback setup hotspot" turned on in the
