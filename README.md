@@ -44,7 +44,7 @@ Everything below is done "headless," over the network.
 2. Insert the micro SD card.
 3. Open Raspberry Pi Imager:
    - **Device**: pick your Pi model
-   - **Operating System**: "Raspberry Pi OS (other)" → **Raspberry Pi OS Lite (64-bit)** — you don't need the desktop version for this
+   - **Operating System**: "Raspberry Pi OS (other)" → **Raspberry Pi OS Lite (32-bit)** — you don't need the desktop version for this. Use 32-bit even if your board supports 64-bit: it runs identically well and works on every Pi this project supports, including the original Pi Zero W/WH, which can't run 64-bit at all (only the Zero 2 W/WH and Pi 3/4/5 can).
    - **Storage**: select your SD card
 4. Click the **gear icon** (⚙) in the bottom right — or press `Ctrl+Shift+X` — to open advanced options. This is the important part: it lets you set everything up before the Pi ever boots, so you never need to plug in a monitor.
    - ✅ Set hostname (e.g. `rivermonitor` — you'll use this to find it later)
