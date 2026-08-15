@@ -215,6 +215,9 @@ The browser will prompt for a username and password — username is
 `stage`, password is whatever you set (or was auto-generated) in the
 setup tool's Network section. This is what keeps the page from being
 usable by anyone else who happens to be on the same network as the Pi.
+After 5 wrong attempts, that source stops being able to try again for
+a minute — so mistype it a few times and you'll just need to wait
+briefly before the next try.
 
 - **2.13" (single-gauge):** change the label, USGS site number,
   measurement, or the 180° flip, and the display refreshes immediately
@@ -316,6 +319,15 @@ else the install script generates) — `grep AUTH_PASS
 recovery flow beyond that; if you want a new one, edit that line
 directly and restart the service: `sudo systemctl restart
 river-display-config`.
+
+**"Too many attempts" / locked out of the web config page**
+After 5 wrong password attempts, that source is locked out for 60
+seconds — this resets the moment a correct login goes through, so it's
+not a growing penalty, just a brief pause. If it's not you (say,
+something else on the network guessing at it), it clears on its own;
+no action needed. This only tracks failed logins — normal browsing,
+including simply loading the page before you've typed anything, never
+counts against it.
 
 **Fallback hotspot never shows up when WiFi is down**
 Confirm you left "Fallback setup hotspot" turned on in the

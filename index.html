@@ -1701,6 +1701,10 @@ button{margin-top:20px;padding:10px 18px;background:#E8C468;color:#0D2431;border
 .gauge h2{font-size:13px;margin:0;color:#7EC8E3}
 .checkrow{display:flex;align-items:center;gap:8px;margin-top:18px;text-transform:none;font-size:14px;color:#E7F1F5}
 .checkrow input{width:auto;margin:0}
+.network-list{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.network-chip{margin:0;padding:6px 10px;background:#0A1D28;color:#E7F1F5;border:1px solid #2B5064;border-radius:3px;font-size:12.5px;font-weight:400;cursor:pointer;white-space:nowrap}
+.network-chip:hover{border-color:#7EC8E3;color:#7EC8E3}
+.network-chip.selected{border-color:#E8C468;color:#E8C468}
 a{color:#7EC8E3}.hint{font-size:12px;color:#7FA3B3;margin-top:24px}`;
 
   // Shared "join a WiFi network" section - only wired in when the
@@ -1735,8 +1739,8 @@ def wifi_connect_later(ssid, password):
 <h2>Join a WiFi network</h2>
 <p class="sub" style="margin:4px 0 10px;">If this page loaded over the fallback hotspot, saving here switches the Pi to the network below and the hotspot disappears - reconnect your phone/laptop to your normal WiFi afterward and find the Pi there instead.</p>
 <form method="POST" action="/wifi">
-<label>Network name (SSID)<input type="text" name="ssid" list="ssidList" required></label>
-<datalist id="ssidList"></datalist>
+<label>Network name (SSID)<input type="text" name="ssid" id="ssidInput" required></label>
+<div class="network-list" id="networkList"></div>
 <label>Password<input type="text" name="password" required></label>
 <button type="submit">Connect</button>
 </form>
@@ -1744,10 +1748,23 @@ def wifi_connect_later(ssid, password):
 </div>
 <script>
 fetch("/wifi-scan").then(function(r){ return r.json(); }).then(function(names){
-  var dl = document.getElementById("ssidList");
-  names.forEach(function(n){ var o = document.createElement("option"); o.value = n; dl.appendChild(o); });
+  var list = document.getElementById("networkList");
+  var input = document.getElementById("ssidInput");
+  names.forEach(function(n){
+    var chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "network-chip";
+    chip.textContent = n;
+    chip.addEventListener("click", function(){
+      input.value = n;
+      list.querySelectorAll(".network-chip").forEach(function(c){ c.classList.remove("selected"); });
+      chip.classList.add("selected");
+      document.querySelector('input[name="password"]').focus();
+    });
+    list.appendChild(chip);
+  });
   document.getElementById("scanHint").textContent = names.length
-    ? ("Found " + names.length + " nearby network(s) - start typing to see them.")
+    ? ("Found " + names.length + " nearby network(s) - tap one, or type your own above (needed for hidden networks).")
     : "No nearby networks found - type the name manually.";
 }).catch(function(){
   document.getElementById("scanHint").textContent = "Could not scan - type the network name manually.";
@@ -1791,7 +1808,23 @@ fetch("/wifi-scan").then(function(r){ return r.json(); }).then(function(names){
   //     credentials on EVERY request to an origin regardless of what
   //     triggered it, so the auth check alone would not stop this.
   const AUTH_PY_FUNCS = `
+FAILED_LOGIN_MAX = 5
+FAILED_LOGIN_LOCKOUT_SECONDS = 60
+_failed_logins = {}  # source IP -> {"count": int, "locked_until": epoch float}
+
 def check_auth(handler):
+    ip = handler.client_address[0]
+    now = time.time()
+    entry = _failed_logins.get(ip)
+    if entry and entry["locked_until"] > now:
+        remaining = int(entry["locked_until"] - now)
+        handler.send_response(429)
+        handler.send_header("Content-Type", "text/plain; charset=utf-8")
+        handler.send_header("Retry-After", str(remaining))
+        handler.end_headers()
+        handler.wfile.write(f"Too many attempts - try again in {remaining}s.".encode("utf-8"))
+        return False
+
     auth = handler.headers.get("Authorization", "")
     if auth.startswith("Basic "):
         try:
@@ -1800,7 +1833,20 @@ def check_auth(handler):
         except Exception:
             user, password = "", ""
         if hmac.compare_digest(user, AUTH_USER) and hmac.compare_digest(password, AUTH_PASS):
+            _failed_logins.pop(ip, None)  # a good login clears any prior strikes
             return True
+        # Credentials were actually supplied and wrong - this is a real
+        # guess, count it. (A bare request with no Authorization header
+        # at all is just the normal first step of the Basic Auth
+        # handshake - every browser does this before it even prompts
+        # the user - so that case falls through below WITHOUT being
+        # counted as an attempt.)
+        entry = _failed_logins.setdefault(ip, {"count": 0, "locked_until": 0})
+        entry["count"] += 1
+        if entry["count"] >= FAILED_LOGIN_MAX:
+            entry["locked_until"] = now + FAILED_LOGIN_LOCKOUT_SECONDS
+            entry["count"] = 0
+
     handler.send_response(401)
     handler.send_header("WWW-Authenticate", 'Basic realm="River display config"')
     handler.send_header("Content-Type", "text/plain; charset=utf-8")
@@ -1864,7 +1910,8 @@ import os
 import socket
 import subprocess
 import base64
-import hmac${apEnabled ? '\nimport threading' : ''}
+import hmac
+import time${apEnabled ? '\nimport threading' : ''}
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import parse_qs
 
@@ -1993,7 +2040,8 @@ import os
 import socket
 import subprocess
 import base64
-import hmac${apEnabled ? '\nimport threading' : ''}
+import hmac
+import time${apEnabled ? '\nimport threading' : ''}
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import parse_qs
 
