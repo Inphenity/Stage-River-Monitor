@@ -343,6 +343,15 @@ connection named `Hotspot`; if it's missing, re-run the install
 script. Also allow it a minute or so after WiFi fails — NetworkManager
 tries known networks first before falling back.
 
+**"Warning: There is another connection with the name..." while running the install script**
+Harmless, but worth knowing what it means: `nmcli` always creates a
+new connection profile rather than updating an existing one, so
+re-running the install script (common while testing) adds duplicates
+each time instead of replacing them. The script cleans up any
+same-named connections before creating a fresh one, so simply
+finishing the run — or re-running it again if you're unsure — resolves
+it; nothing to fix by hand.
+
 **"Join a WiFi network" on the config page doesn't connect**
 Double-check the password — this section doesn't validate it before
 attempting to connect, so a wrong password just fails silently back to

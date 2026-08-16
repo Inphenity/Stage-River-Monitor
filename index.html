@@ -2337,10 +2337,28 @@ if __name__ == "__main__":
   // BASH INSTALL SCRIPT
   // ==================================================================
   function buildBashScript(opts){
+    const needsNmcliHelper = opts.wifiNetworks.length > 0 ||
+      (opts.fallbackAp && opts.fallbackApPassword && opts.fallbackApPassword.length >= 8);
+    const nmcliHelperBlock = needsNmcliHelper ? `
+# ---- Helper: remove any existing connection(s) with a given name
+# before creating a new one, by UUID. "nmcli connection add" always
+# creates a brand-new profile rather than updating an existing one, so
+# re-running this script would otherwise pile up duplicate connections
+# sharing the same name every time. Once that happens, anything that
+# references a connection BY NAME (like the "connection modify" calls
+# below) becomes ambiguous, and NetworkManager can silently apply the
+# change to a stale leftover instead of the one just created. ----
+nmcli_replace() {
+  for uuid in $(nmcli -t -f NAME,UUID connection show | awk -F: -v n="$1" '$1==n{print $2}'); do
+    sudo nmcli connection delete "$uuid" 2>/dev/null || true
+  done
+}
+` : '';
+
     let wifiCredsBlock = '';
     if (opts.wifiNetworks.length){
       const lines = opts.wifiNetworks.map(n =>
-        `sudo nmcli connection add type wifi con-name "${escBash(n.ssid)}" ifname wlan0 ssid "${escBash(n.ssid)}" wifi-sec.key-mgmt wpa-psk wifi-sec.psk "${escBash(n.password)}"`
+        `nmcli_replace "${escBash(n.ssid)}"\nsudo nmcli connection add type wifi con-name "${escBash(n.ssid)}" ifname wlan0 ssid "${escBash(n.ssid)}" wifi-sec.key-mgmt wpa-psk wifi-sec.psk "${escBash(n.password)}"`
       ).join('\n');
       wifiCredsBlock = `
 # ---- Add WiFi network${opts.wifiNetworks.length > 1 ? 's' : ''} (only needed if the Pi isn't already online) ----
@@ -2359,6 +2377,7 @@ ${lines}
 # "reachable" since it creates its own network instead of joining one.
 # ipv4.method=shared makes NetworkManager run its own DHCP/DNS for it -
 # no separate hostapd/dnsmasq install needed. ----
+nmcli_replace "Hotspot"
 sudo nmcli connection add type wifi ifname wlan0 con-name "Hotspot" autoconnect yes ssid "${escBash(opts.fallbackApSsid)}"
 sudo nmcli connection modify "Hotspot" 802-11-wireless.mode ap 802-11-wireless.band bg ipv4.method shared
 sudo nmcli connection modify "Hotspot" wifi-sec.key-mgmt wpa-psk wifi-sec.psk "${escBash(opts.fallbackApPassword)}"
@@ -2405,7 +2424,7 @@ pip3 install requests RPi.GPIO spidev --break-system-packages
 
 # ---- 3. Enable SPI (needed for the e-paper HAT) ----
 sudo raspi-config nonint do_spi 0
-${wifiCredsBlock}${fallbackApBlock}${hdmiBlock}${wifiBlock}
+${nmcliHelperBlock}${wifiCredsBlock}${fallbackApBlock}${hdmiBlock}${wifiBlock}
 # ---- 4. Project directory ----
 mkdir -p ~/river_display
 cd ~/river_display
@@ -2504,7 +2523,7 @@ pip3 install requests RPi.GPIO spidev --break-system-packages
 
 # ---- 3. Enable SPI (needed for the e-paper HAT) ----
 sudo raspi-config nonint do_spi 0
-${wifiCredsBlock}${fallbackApBlock}${hdmiBlock}${wifiBlock}
+${nmcliHelperBlock}${wifiCredsBlock}${fallbackApBlock}${hdmiBlock}${wifiBlock}
 # ---- 4. Project directory ----
 mkdir -p ~/river_display
 cd ~/river_display
