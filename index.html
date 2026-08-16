@@ -806,6 +806,7 @@ footer{ text-align:center; color: var(--ink-muted); font-family: var(--mono); fo
   // SINGLE-GAUGE (2.13") PYTHON SCRIPT
   // ==================================================================
   function buildPythonScriptSingle(opts){
+    const apEnabled = opts.fallbackAp && opts.fallbackApPassword && opts.fallbackApPassword.length >= 8;
     const trendFuncs = opts.trendArrow ? `
 def get_trend(history):
     """Compares the latest reading to the one right before it - the last
@@ -861,7 +862,7 @@ config_server.py, which writes ~/river_display/config.json.
 import os
 import sys
 import json
-import socket
+import socket${apEnabled ? '\nimport subprocess' : ''}
 import requests
 from datetime import datetime, timedelta
 from PIL import Image, ImageDraw, ImageFont
@@ -939,7 +940,53 @@ def truncate_to_width(draw, text, font, max_width):
     while trimmed and draw.textlength(trimmed + "…", font=font) > max_width:
         trimmed = trimmed[:-1]
     return (trimmed + "…") if trimmed else "…"
+${apEnabled ? `
+FALLBACK_AP_SSID = "${escPy(opts.fallbackApSsid)}"
 
+def in_fallback_hotspot_mode():
+    """True if wlan0's active NetworkManager connection is the fallback
+    setup hotspot rather than a normal WiFi network - meaning there's
+    no real internet right now, so a recovery message is more useful
+    on screen than stale gauge data. This is a plain read of
+    NetworkManager's own status, so it needs no special permissions."""
+    try:
+        result = subprocess.run(
+            ["nmcli", "-g", "GENERAL.CONNECTION", "device", "show", "wlan0"],
+            capture_output=True, text=True, timeout=5,
+        )
+        return result.stdout.strip() == "Hotspot"
+    except Exception:
+        return False
+
+def render_fallback_screen(flip180):
+    """Replaces the normal gauge view with WiFi recovery instructions
+    while the fallback hotspot is active - discoverable without already
+    knowing to look for a mystery WiFi network. Uses the Pi's own
+    hostname, read fresh at render time - STAGE has no way to know it
+    in advance, since it's set independently in Raspberry Pi Imager."""
+    epd = epd_driver.EPD()
+    image = Image.new('1', (epd.height, epd.width), 255)
+    draw = ImageDraw.Draw(image)
+    font_title = ImageFont.truetype(FONT_PATH_BOLD, 14)
+    font_small = ImageFont.truetype(FONT_PATH_REG, 10)
+    hostname = socket.gethostname()
+    draw.text((6, 3), "WiFi lost — reconnect:", font=font_title, fill=0)
+    draw.text((6, 24), "1. Join WiFi:", font=font_small, fill=0)
+    ssid_display = truncate_to_width(draw, FALLBACK_AP_SSID, font_title, epd.height - 12)
+    draw.text((6, 36), ssid_display, font=font_title, fill=0)
+    draw.text((6, 62), "2. Then visit:", font=font_small, fill=0)
+    url_display = truncate_to_width(draw, f"{hostname}.local:8080", font_title, epd.height - 12)
+    draw.text((6, 74), url_display, font=font_title, fill=0)
+    draw.text((6, 102), "(or 10.42.0.1:8080)", font=font_small, fill=0)
+    if flip180:
+        image = image.rotate(180)
+    buf = epd.getbuffer(image)
+    epd.init()
+    epd.Clear(0xFF)
+    epd.display(buf)
+    epd.displayPartBaseImage(buf)
+    epd.sleep()
+` : ''}
 def get_run_count():
     try:
         with open(STATE_FILE, "r") as f:
@@ -1078,7 +1125,12 @@ ${trendCall}
 
 def main():
     cfg = load_config()
-    param_code, unit = param_and_unit(cfg["measurement"])
+${apEnabled ? `    if in_fallback_hotspot_mode():
+        # No real internet right now - skip the USGS fetch entirely
+        # (it would just fail) and show recovery instructions instead.
+        render_fallback_screen(cfg["flip180"])
+        return
+` : ''}    param_code, unit = param_and_unit(cfg["measurement"])
     try:
         current = fetch_current(cfg["site_no"], param_code)
         flow_val = current.get(param_code, {}).get("value", "N/A")
@@ -1101,6 +1153,7 @@ if __name__ == "__main__":
   // MULTI-GAUGE (2.7", 4-button) PYTHON SCRIPT
   // ==================================================================
   function buildPythonScriptMulti(opts){
+    const apEnabled = opts.fallbackAp && opts.fallbackApPassword && opts.fallbackApPassword.length >= 8;
     const gauges = opts.gauges;
     const gaugesDict = gauges.map(g => {
       const paramCode = g.measurement === 'gaugeHeight' ? '00065' : '00060';
@@ -1184,7 +1237,7 @@ import sys
 import time
 import json
 import socket
-import threading
+import threading${apEnabled ? '\nimport subprocess' : ''}
 import requests
 from datetime import datetime, timedelta
 from PIL import Image, ImageDraw, ImageFont
@@ -1280,7 +1333,40 @@ def truncate_to_width(draw, text, font, max_width):
     while trimmed and draw.textlength(trimmed + "…", font=font) > max_width:
         trimmed = trimmed[:-1]
     return (trimmed + "…") if trimmed else "…"
+${apEnabled ? `
+FALLBACK_AP_SSID = "${escPy(opts.fallbackApSsid)}"
 
+def in_fallback_hotspot_mode():
+    """True if wlan0's active NetworkManager connection is the fallback
+    setup hotspot rather than a normal WiFi network - meaning there's
+    no real internet right now, so a recovery message is more useful
+    on screen than stale gauge data. This is a plain read of
+    NetworkManager's own status, so it needs no special permissions."""
+    try:
+        result = subprocess.run(
+            ["nmcli", "-g", "GENERAL.CONNECTION", "device", "show", "wlan0"],
+            capture_output=True, text=True, timeout=5,
+        )
+        return result.stdout.strip() == "Hotspot"
+    except Exception:
+        return False
+
+def draw_fallback_hotspot_screen(draw, w, h, font_title, font_small):
+    """Replaces the normal gauge view with WiFi recovery instructions
+    while the fallback hotspot is active - discoverable without already
+    knowing to look for a mystery WiFi network. Uses the Pi's own
+    hostname, read fresh at render time - STAGE has no way to know it
+    in advance, since it's set independently in Raspberry Pi Imager."""
+    hostname = socket.gethostname()
+    draw.text((8, 8), "WiFi lost — reconnect:", font=font_title, fill=0)
+    draw.text((8, 34), "1. Join WiFi:", font=font_small, fill=0)
+    ssid_display = truncate_to_width(draw, FALLBACK_AP_SSID, font_title, w - 16)
+    draw.text((8, 48), ssid_display, font=font_title, fill=0)
+    draw.text((8, 84), "2. Then visit:", font=font_small, fill=0)
+    url_display = truncate_to_width(draw, f"{hostname}.local:8080", font_title, w - 16)
+    draw.text((8, 98), url_display, font=font_title, fill=0)
+    draw.text((8, 140), "(or 10.42.0.1:8080)", font=font_small, fill=0)
+` : ''}
 HISTORY_PERIOD = "P2D"
 REFRESH_MINUTES = set(${JSON.stringify(opts.minutes)})
 ACTIVE_HOUR_START = ${opts.hourStart}
@@ -1406,7 +1492,12 @@ def render(button_num, full_refresh=True):
     if entry is None:
         draw.text((8, 8), "No data yet", font=font_title, fill=0)
         draw.text((8, h // 2 - 6), f"Button {button_num} is not configured", font=font_small, fill=0)
-    else:
+${apEnabled ? `    elif in_fallback_hotspot_mode():
+        # Takes priority over the normal view - there's no real internet
+        # right now, so a recovery message is more useful than even a
+        # configured gauge's stale cached reading.
+        draw_fallback_hotspot_screen(draw, w, h, font_title, font_small)
+` : ''}    else:
         # Row 1: label (left) + last 3 digits of the Pi's IP (right) - so
         # it's easy to tell which device this is on a network with more
         # than one running. Kept off Row 3 below on purpose: that row is

@@ -247,17 +247,23 @@ If the Pi ever can't reach any WiFi network it knows about — the
 password in Step 1 was wrong, the network got renamed, the router got
 replaced, or the Pi moved somewhere new — it automatically broadcasts
 its own network instead of just going dark. No monitor, keyboard, or
-re-flashing required to fix it:
+re-flashing required to fix it. **The display itself tells you what to
+do** — it swaps the gauge reading for reconnect instructions (the
+hotspot's name, and the address to visit) the moment it detects the
+fallback hotspot is active, so you don't need to already know this
+feature exists to find your way back:
 
-1. On your phone or laptop, connect to the WiFi network named whatever
-   you set as the hotspot SSID in the setup tool (defaults to
-   `<display label>-setup`), using the password you set there. Expect
-   a "no internet" warning on this network — that's normal, it's
-   local-only.
-2. Open `http://10.42.0.1:8080` in a browser. It'll prompt for a
-   username and password — username `stage`, password whatever you set
-   (or was auto-generated) for the web config page in the setup tool.
-   This isn't the same as the hotspot's own WiFi password from step 1.
+1. On your phone or laptop, connect to the WiFi network named on the
+   display (defaults to `<display label>-setup`), using the password
+   you set for it in the setup tool. Expect a "no internet" warning on
+   this network — that's normal, it's local-only.
+2. Open the address shown on the display in a browser — normally
+   `<hostname>.local:8080`, with `10.42.0.1:8080` underneath as a
+   fallback if `.local` doesn't resolve on your device. It'll prompt
+   for a username and password — username `stage`, password whatever
+   you set (or was auto-generated) for the web config page in the
+   setup tool. This isn't the same as the hotspot's own WiFi password
+   from step 1.
 3. Use the **"Join a WiFi network"** section to pick your (real)
    network and enter its password, then submit.
 4. The Pi switches over and the hotspot disappears within a few
