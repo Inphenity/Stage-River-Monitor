@@ -201,9 +201,8 @@ journalctl -u pisugar-button-setup           # PiSugar 2/2 Pro/3 series
 
 You don't need to SSH back in or re-run the install script for any of
 this. Every display shows the last 3 digits of the Pi's IP address in
-the corner (next to the "Updated" timestamp, with a small WiFi icon
-under it) — use that to find it on your router's device list, or just
-check there directly.
+a top corner, with a small WiFi icon under it — use that to find it on
+your router's device list, or just check there directly.
 
 Then, from any browser on the same network:
 
