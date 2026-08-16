@@ -2441,6 +2441,13 @@ ${pyScript}PYEOF
 chmod +x ~/river_display/river_display.py
 
 # ---- 7. Test run (Ctrl+C to stop once you see it come up) ----
+# Stop any already-running instance first - if this script has been
+# run before, river-display.service may already be holding the
+# e-paper's GPIO pins, which would make this manual test fail with a
+# confusing (but harmless) "GPIO busy" error rather than actually
+# testing anything. Safe even on a first run, when there's nothing to
+# stop yet.
+sudo systemctl stop river-display.service 2>/dev/null || true
 echo "Running a quick test now - press Ctrl+C after a few seconds once the display updates."
 cd ~/river_display
 timeout 20 python3 river_display.py; echo "Test run finished (or timed out) - check the display."

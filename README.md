@@ -290,6 +290,16 @@ Usually a wrong USGS site number, or a site that doesn't publish the
 measurement you picked (discharge vs. gauge height) — double check on
 the site's own page at waterdata.usgs.gov.
 
+**"GPIO busy" traceback (2.7" HAT)**
+Means something else already has the display's GPIO pins claimed —
+almost always the `river-display` service already running in the
+background while you (or the install script, on a re-run) try to
+launch the display script manually at the same time. The install
+script now stops the service before its own test run automatically,
+so this shouldn't come up there anymore. If you hit it running
+`python3 river_display.py` yourself later, `sudo systemctl stop
+river-display` first, then try again.
+
 **Can't SSH in at all**
 See the troubleshooting notes at the end of Step 3 — it's almost
 always either the Pi not being fully booted yet, or `.local` discovery
