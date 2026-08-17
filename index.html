@@ -944,18 +944,35 @@ ${apEnabled ? `
 FALLBACK_AP_SSID = "${escPy(opts.fallbackApSsid)}"
 
 def in_fallback_hotspot_mode():
-    """True if wlan0's active NetworkManager connection is the fallback
-    setup hotspot rather than a normal WiFi network - meaning there's
-    no real internet right now, so a recovery message is more useful
-    on screen than stale gauge data. This is a plain read of
-    NetworkManager's own status, so it needs no special permissions."""
+    """True if wlan0 is currently running as the fallback setup hotspot
+    rather than joined to a normal WiFi network - meaning there's no
+    real internet right now, so a recovery message is more useful on
+    screen than stale gauge data. Checks two independent signals so a
+    single flaky read can't flip the result: NetworkManager's own
+    connection-name field, and (since that alone was observed to
+    revert incorrectly on at least one real device) whether wlan0's own
+    address falls in 10.42.0.0/24 - the fixed subnet 'ipv4.method
+    shared' always uses for the hotspot, which a normal joined network
+    essentially never hands out. Either signal alone is enough to
+    return True. Logs failures to stderr (captured in log.txt by the
+    systemd service) so a future misfire has something to look at."""
     try:
         result = subprocess.run(
             ["nmcli", "-g", "GENERAL.CONNECTION", "device", "show", "wlan0"],
             capture_output=True, text=True, timeout=5,
         )
-        return result.stdout.strip() == "Hotspot"
-    except Exception:
+        if result.stdout.strip() == "Hotspot":
+            return True
+    except Exception as e:
+        print(f"in_fallback_hotspot_mode: connection-name check failed: {e}", file=sys.stderr)
+    try:
+        result = subprocess.run(
+            ["nmcli", "-g", "IP4.ADDRESS", "device", "show", "wlan0"],
+            capture_output=True, text=True, timeout=5,
+        )
+        return result.stdout.strip().startswith("10.42.0.")
+    except Exception as e:
+        print(f"in_fallback_hotspot_mode: IP-address check failed: {e}", file=sys.stderr)
         return False
 
 def render_fallback_screen(flip180):
@@ -1337,18 +1354,35 @@ ${apEnabled ? `
 FALLBACK_AP_SSID = "${escPy(opts.fallbackApSsid)}"
 
 def in_fallback_hotspot_mode():
-    """True if wlan0's active NetworkManager connection is the fallback
-    setup hotspot rather than a normal WiFi network - meaning there's
-    no real internet right now, so a recovery message is more useful
-    on screen than stale gauge data. This is a plain read of
-    NetworkManager's own status, so it needs no special permissions."""
+    """True if wlan0 is currently running as the fallback setup hotspot
+    rather than joined to a normal WiFi network - meaning there's no
+    real internet right now, so a recovery message is more useful on
+    screen than stale gauge data. Checks two independent signals so a
+    single flaky read can't flip the result: NetworkManager's own
+    connection-name field, and (since that alone was observed to
+    revert incorrectly on at least one real device) whether wlan0's own
+    address falls in 10.42.0.0/24 - the fixed subnet 'ipv4.method
+    shared' always uses for the hotspot, which a normal joined network
+    essentially never hands out. Either signal alone is enough to
+    return True. Logs failures to stderr (captured in log.txt by the
+    systemd service) so a future misfire has something to look at."""
     try:
         result = subprocess.run(
             ["nmcli", "-g", "GENERAL.CONNECTION", "device", "show", "wlan0"],
             capture_output=True, text=True, timeout=5,
         )
-        return result.stdout.strip() == "Hotspot"
-    except Exception:
+        if result.stdout.strip() == "Hotspot":
+            return True
+    except Exception as e:
+        print(f"in_fallback_hotspot_mode: connection-name check failed: {e}", file=sys.stderr)
+    try:
+        result = subprocess.run(
+            ["nmcli", "-g", "IP4.ADDRESS", "device", "show", "wlan0"],
+            capture_output=True, text=True, timeout=5,
+        )
+        return result.stdout.strip().startswith("10.42.0.")
+    except Exception as e:
+        print(f"in_fallback_hotspot_mode: IP-address check failed: {e}", file=sys.stderr)
         return False
 
 def draw_fallback_hotspot_screen(draw, w, h, font_title, font_small):
