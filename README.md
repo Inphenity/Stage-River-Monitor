@@ -369,6 +369,15 @@ whatever network was active before. If it was working over the
 fallback hotspot specifically, also confirm the sudoers rule applied
 correctly (same fix as above: re-run the install script).
 
+**A network I know is nearby doesn't show up in the scan list**
+Most likely it's a 5GHz-only network — the Pi Zero W/WH/2W/2WH's radio
+can't see 5GHz at all (see the note in Step 1), so if a guest network
+(common at businesses, hotels, restaurants) only broadcasts on 5GHz,
+no amount of rescanning will make it appear. If you know the exact
+name, try typing it into the text field directly instead of picking a
+scanned entry — that also covers hidden (non-broadcasting) networks,
+which never show up in a scan no matter the band.
+
 ---
 
 *USGS Instantaneous Values API · Waveshare e-Paper · No signup, no key required*

@@ -1908,6 +1908,21 @@ a{color:#7EC8E3}.hint{font-size:12px;color:#7FA3B3;margin-top:24px}`;
   const WIFI_PY_FUNCS = `
 def wifi_scan():
     try:
+        # Explicitly ask the radio to scan again first, rather than just
+        # trusting whatever NetworkManager already had cached - a
+        # network that's only just come into range (e.g. walking into a
+        # new building) can otherwise be missing simply because the
+        # last scan predates it, not because it isn't there. In its own
+        # try/except: if this fails for any reason (a permission the
+        # current user doesn't have, or no radio at all), the actual
+        # list() attempt below still runs regardless, on whatever's
+        # already cached.
+        subprocess.run(["nmcli", "device", "wifi", "rescan"],
+                        capture_output=True, text=True, timeout=10)
+        time.sleep(2)  # give the scan a moment to actually populate
+    except Exception:
+        pass
+    try:
         out = subprocess.run(["nmcli", "-t", "-f", "SSID", "device", "wifi", "list"],
                               capture_output=True, text=True, timeout=10)
         seen, names = set(), []
