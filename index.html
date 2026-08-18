@@ -249,7 +249,7 @@ footer{ text-align:center; color: var(--ink-muted); font-family: var(--mono); fo
             <input type="checkbox" id="fallbackAp" checked>
             <label for="fallbackAp" class="toggle-text">
               <div class="toggle-title">Fallback setup hotspot</div>
-              <div class="toggle-desc">If the Pi can't reach any known WiFi network (wrong password above, network changed, moved somewhere new), it broadcasts its own network so you can fix WiFi from a phone or laptop instead of re-flashing the SD card. Only activates when normal WiFi is unreachable — otherwise stays off and out of the way.</div>
+              <div class="toggle-desc">If the Pi can't reach any known WiFi network (wrong password above, network changed, moved somewhere new), it broadcasts its own network so you can fix WiFi from a phone or laptop instead of re-flashing the SD card. Joining that network should pop the config page up on its own, like hotel WiFi sign-in does — no need to know the Pi's address. Only activates when normal WiFi is unreachable — otherwise stays off and out of the way.</div>
             </label>
           </div>
           <div id="fallbackApFields" style="margin-top:4px;">
@@ -258,19 +258,7 @@ footer{ text-align:center; color: var(--ink-muted); font-family: var(--mono); fo
               <input type="text" id="fallbackApSsid" maxlength="32" placeholder="e.g. rivermonitor-setup">
               <div class="field-hint">Defaults to "&lt;display label&gt;-setup" if left blank.</div>
             </div>
-            <div class="field">
-              <div class="field-label">Hotspot password</div>
-              <input type="text" id="fallbackApPassword" maxlength="63" placeholder="At least 8 characters">
-              <div class="field-hint">Required — WPA2 needs 8+ characters. Anyone who knows this can join the hotspot while it's active, so don't reuse a password you care about.</div>
-              <div class="field-hint toggle-warn" id="fallbackApWarning" style="display:none;">Password needs to be at least 8 characters — the hotspot won't be set up until it is.</div>
-            </div>
-          </div>
-          <div class="field" style="margin-top:18px;">
-            <div class="field-label">Web config page password <span class="req">*</span></div>
-            <input type="text" id="configPassword" maxlength="63" placeholder="Leave blank to auto-generate one">
-            <div class="field-hint">Required to open the web config page at <code>:8080</code> — the browser will prompt for it. This is what keeps that page from being reachable by anyone who finds the Pi's address, which matters a lot if you ever expose it beyond your own network (e.g. a port forward). Leave blank and STAGE generates a random one for you — copy it down before you leave this page, since it won't be shown again.</div>
-            <div class="field-hint" id="configPasswordAutoHint" style="display:none;"></div>
-            <div class="field-hint toggle-warn" id="configPasswordWarning" style="display:none;">Password needs to be at least 8 characters.</div>
+            <div class="field-hint">No password to set here — the Pi generates a fresh 8-digit PIN and shows it right on the display whenever the hotspot is active, like a 2FA code. It changes periodically while nobody's connected, and holds steady once someone is, so it never gets pulled out from under a setup in progress.</div>
           </div>
         </div>
       </div>
@@ -806,7 +794,7 @@ footer{ text-align:center; color: var(--ink-muted); font-family: var(--mono); fo
   // SINGLE-GAUGE (2.13") PYTHON SCRIPT
   // ==================================================================
   function buildPythonScriptSingle(opts){
-    const apEnabled = opts.fallbackAp && opts.fallbackApPassword && opts.fallbackApPassword.length >= 8;
+    const apEnabled = opts.fallbackAp;
     const trendFuncs = opts.trendArrow ? `
 def get_trend(history):
     """Compares the latest reading to the one right before it - the last
@@ -835,16 +823,16 @@ def draw_trend_arrow(draw, trend, x, y, size=14):
 ` : '';
 
     const trendCall = opts.trendArrow ? `
-    trend = get_trend(history)
-    draw_trend_arrow(draw, trend, x=222, y=34, size=14)` : '';
+        trend = get_trend(history)
+        draw_trend_arrow(draw, trend, x=222, y=34, size=14)` : '';
 
     const refreshLogic = opts.fullRefreshOnly
-      ? `    do_full_refresh = True  # full refresh every run - avoids ghosting`
-      : `    run_count = get_run_count()
-    do_full_refresh = "--full" in sys.argv or (run_count % FULL_REFRESH_EVERY == 0)`;
+      ? `        do_full_refresh = True  # full refresh every run - avoids ghosting`
+      : `        run_count = get_run_count()
+        do_full_refresh = "--full" in sys.argv or (run_count % FULL_REFRESH_EVERY == 0)`;
 
     const saveCountLine = opts.fullRefreshOnly ? '' : `
-    save_run_count(run_count + 1)`;
+        save_run_count(run_count + 1)`;
 
     const paramCode = opts.measurement === 'gaugeHeight' ? '00065' : '00060';
     const unitLabel = opts.measurement === 'gaugeHeight' ? 'ft' : 'cfs';
@@ -862,7 +850,9 @@ config_server.py, which writes ~/river_display/config.json.
 import os
 import sys
 import json
-import socket${apEnabled ? '\nimport subprocess' : ''}
+import socket
+import fcntl
+import time${apEnabled ? '\nimport subprocess' : ''}
 import requests
 from datetime import datetime, timedelta
 from PIL import Image, ImageDraw, ImageFont
@@ -878,6 +868,30 @@ FULL_REFRESH_EVERY = 8
 STATE_FILE = os.path.expanduser("~/.river_display_state")
 FONT_PATH_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 FONT_PATH_REG = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+
+EPD_LOCK_FILE = os.path.expanduser("~/river_display/epd.lock")
+
+def _epd_lock(timeout=5):
+    """Serializes e-paper access with the separate web config server -
+    it can also draw to the display now (a login PIN reveal), and the
+    SPI bus can't take two writers at once. Returns an open, locked
+    file handle on success (pass to _epd_unlock when done), or None if
+    the display stayed busy past the timeout."""
+    fd = open(EPD_LOCK_FILE, "w")
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return fd
+        except BlockingIOError:
+            time.sleep(0.1)
+    fd.close()
+    return None
+
+def _epd_unlock(fd):
+    if fd:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+        fd.close()
 
 def load_config():
     """Site/measurement/label/orientation from config.json (written by
@@ -975,34 +989,90 @@ def in_fallback_hotspot_mode():
         print(f"in_fallback_hotspot_mode: IP-address check failed: {e}", file=sys.stderr)
         return False
 
+HOTSPOT_PIN_FILE = os.path.expanduser("~/river_display/hotspot_pin.txt")
+HOTSPOT_PIN_MIN_ROTATE_SECONDS = 600  # never rotate more often than this
+
+def _hotspot_client_connected():
+    """True if a phone/laptop is currently associated with the hotspot -
+    checked before rotating the PIN so a change never gets pulled out
+    from under someone mid-setup. Requires the 'iw' package."""
+    try:
+        result = subprocess.run(["iw", "dev", "wlan0", "station", "dump"],
+                                 capture_output=True, text=True, timeout=5)
+        return bool(result.stdout.strip())
+    except Exception:
+        return False
+
+def _generate_hotspot_pin():
+    import random
+    return "".join(str(random.randint(0, 9)) for _ in range(8))
+
+def _rotate_hotspot_pin_if_due():
+    """Like a 2FA code that changes periodically: generates a fresh PIN
+    (or the very first one) and applies it as the hotspot's WPA2
+    password if HOTSPOT_PIN_MIN_ROTATE_SECONDS has passed since the
+    last change, but only when nobody's currently connected. This
+    script only runs on the normal refresh schedule (cron), so in
+    practice the PIN rotates about as often as REFRESH_MINUTES is set
+    to fire - fast enough to feel fresh, slow enough not to fight the
+    e-paper's refresh speed. Returns whatever PIN is in effect now."""
+    try:
+        age = time.time() - os.stat(HOTSPOT_PIN_FILE).st_mtime
+        current_pin = open(HOTSPOT_PIN_FILE).read().strip()
+    except (FileNotFoundError, OSError):
+        age, current_pin = None, None
+
+    due = age is None or age >= HOTSPOT_PIN_MIN_ROTATE_SECONDS
+    if due and not _hotspot_client_connected():
+        new_pin = _generate_hotspot_pin()
+        subprocess.run(["sudo", "-n", "nmcli", "connection", "modify", "Hotspot",
+                         "wifi-sec.psk", new_pin], capture_output=True, timeout=10)
+        subprocess.run(["sudo", "-n", "nmcli", "connection", "up", "Hotspot"],
+                        capture_output=True, timeout=15)
+        with open(HOTSPOT_PIN_FILE, "w") as f:
+            f.write(new_pin)
+        return new_pin
+    return current_pin or "generating…"
+
 def render_fallback_screen(flip180):
     """Replaces the normal gauge view with WiFi recovery instructions
     while the fallback hotspot is active - discoverable without already
     knowing to look for a mystery WiFi network. Uses the Pi's own
     hostname, read fresh at render time - STAGE has no way to know it
     in advance, since it's set independently in Raspberry Pi Imager."""
-    epd = epd_driver.EPD()
-    image = Image.new('1', (epd.height, epd.width), 255)
-    draw = ImageDraw.Draw(image)
-    font_title = ImageFont.truetype(FONT_PATH_BOLD, 14)
-    font_small = ImageFont.truetype(FONT_PATH_REG, 10)
-    hostname = socket.gethostname()
-    draw.text((6, 3), "WiFi lost — reconnect:", font=font_title, fill=0)
-    draw.text((6, 24), "1. Join WiFi:", font=font_small, fill=0)
-    ssid_display = truncate_to_width(draw, FALLBACK_AP_SSID, font_title, epd.height - 12)
-    draw.text((6, 36), ssid_display, font=font_title, fill=0)
-    draw.text((6, 62), "2. Then visit:", font=font_small, fill=0)
-    url_display = truncate_to_width(draw, f"{hostname}.local:8080", font_title, epd.height - 12)
-    draw.text((6, 74), url_display, font=font_title, fill=0)
-    draw.text((6, 102), "(or 10.42.0.1:8080)", font=font_small, fill=0)
-    if flip180:
-        image = image.rotate(180)
-    buf = epd.getbuffer(image)
-    epd.init()
-    epd.Clear(0xFF)
-    epd.display(buf)
-    epd.displayPartBaseImage(buf)
-    epd.sleep()
+    fd = _epd_lock()
+    if fd is None:
+        print("render_fallback_screen: display busy, skipping this refresh", file=sys.stderr)
+        return
+    try:
+        epd = epd_driver.EPD()
+        image = Image.new('1', (epd.height, epd.width), 255)
+        draw = ImageDraw.Draw(image)
+        font_title = ImageFont.truetype(FONT_PATH_BOLD, 14)
+        font_small = ImageFont.truetype(FONT_PATH_REG, 10)
+        hostname = socket.gethostname()
+        pin = _rotate_hotspot_pin_if_due()
+        draw.text((6, 2), "WiFi lost — reconnect:", font=font_title, fill=0)
+        draw.text((6, 20), "1. Join:", font=font_small, fill=0)
+        ssid_display = truncate_to_width(draw, FALLBACK_AP_SSID, font_title, epd.height - 54)
+        draw.text((54, 18), ssid_display, font=font_title, fill=0)
+        draw.text((6, 40), "2. PIN:", font=font_small, fill=0)
+        draw.text((54, 38), pin, font=font_title, fill=0)
+        draw.text((6, 60), "3. Visit:", font=font_small, fill=0)
+        url_display = truncate_to_width(draw, f"{hostname}.local:8080", font_title, epd.height - 54)
+        draw.text((54, 58), url_display, font=font_title, fill=0)
+        draw.text((6, 80), "(or 10.42.0.1:8080)", font=font_small, fill=0)
+        draw.text((6, 100), "PIN refreshes while idle", font=font_small, fill=0)
+        if flip180:
+            image = image.rotate(180)
+        buf = epd.getbuffer(image)
+        epd.init()
+        epd.Clear(0xFF)
+        epd.display(buf)
+        epd.displayPartBaseImage(buf)
+        epd.sleep()
+    finally:
+        _epd_unlock(fd)
 ` : ''}
 def get_run_count():
     try:
@@ -1100,45 +1170,52 @@ def draw_sparkline(draw, values, x, y, width, height):
 
 def render_display(label, unit, discharge, timestamp, history, flip180):
     history_values = [v for _, v in history]  # plain values for the sparkline plot
-    epd = epd_driver.EPD()
+    fd = _epd_lock()
+    if fd is None:
+        print("render_display: display busy (config page mid-draw?), skipping this refresh", file=sys.stderr)
+        return
+    try:
+        epd = epd_driver.EPD()
 ${refreshLogic}
-    image = Image.new('1', (epd.height, epd.width), 255)
-    draw = ImageDraw.Draw(image)
-    font_title = ImageFont.truetype(FONT_PATH_BOLD, 14)
-    font_body = ImageFont.truetype(FONT_PATH_BOLD, 30)
-    font_small = ImageFont.truetype(FONT_PATH_REG, 10)
-    # "Updated" text is computed first since it's right-aligned to a
-    # fixed edge; the label is then measured against whatever space that
-    # leaves and truncated with an ellipsis if it would otherwise run
-    # into it - a long label combined with a wide font could overlap it
-    # if drawn independently, since neither was aware of the other.
-    refresh_str = datetime.now().strftime("Updated %I:%M %p") + f"  ·.{get_ip_suffix()}"
-    refresh_w = draw.textlength(refresh_str, font=font_small)
-    refresh_x = 245 - refresh_w
-    display_label = truncate_to_width(draw, label, font_title, refresh_x - 8)
-    draw.text((5, 1), display_label, font=font_title, fill=0)
-    draw.text((refresh_x, 2), refresh_str, font=font_small, fill=0)
-    draw_wifi_icon(draw, 236, 23)
-    draw.text((5, 16), f"{discharge} {unit}", font=font_body, fill=0)
-    ts_full = format_timestamp(timestamp)
-    ts_date, _, ts_time = ts_full.partition(" ")
-    draw.text((165, 32), ts_date, font=font_small, fill=0)
-    draw.text((165, 46), ts_time, font=font_small, fill=0)
+        image = Image.new('1', (epd.height, epd.width), 255)
+        draw = ImageDraw.Draw(image)
+        font_title = ImageFont.truetype(FONT_PATH_BOLD, 14)
+        font_body = ImageFont.truetype(FONT_PATH_BOLD, 30)
+        font_small = ImageFont.truetype(FONT_PATH_REG, 10)
+        # "Updated" text is computed first since it's right-aligned to a
+        # fixed edge; the label is then measured against whatever space that
+        # leaves and truncated with an ellipsis if it would otherwise run
+        # into it - a long label combined with a wide font could overlap it
+        # if drawn independently, since neither was aware of the other.
+        refresh_str = datetime.now().strftime("Updated %I:%M %p") + f"  ·.{get_ip_suffix()}"
+        refresh_w = draw.textlength(refresh_str, font=font_small)
+        refresh_x = 245 - refresh_w
+        display_label = truncate_to_width(draw, label, font_title, refresh_x - 8)
+        draw.text((5, 1), display_label, font=font_title, fill=0)
+        draw.text((refresh_x, 2), refresh_str, font=font_small, fill=0)
+        draw_wifi_icon(draw, 236, 23)
+        draw.text((5, 16), f"{discharge} {unit}", font=font_body, fill=0)
+        ts_full = format_timestamp(timestamp)
+        ts_date, _, ts_time = ts_full.partition(" ")
+        draw.text((165, 32), ts_date, font=font_small, fill=0)
+        draw.text((165, 46), ts_time, font=font_small, fill=0)
 ${trendCall}
-    draw.text((5, 54), f"48h trend ({unit}):", font=font_small, fill=0)
-    draw_sparkline(draw, history_values, x=5, y=68, width=240, height=50)
-    if flip180:
-        image = image.rotate(180)
-    buf = epd.getbuffer(image)
-    if do_full_refresh:
-        epd.init()
-        epd.Clear(0xFF)
-        epd.display(buf)
-        epd.displayPartBaseImage(buf)
-    else:
-        epd.init()
-        epd.displayPartial(buf)
-    epd.sleep()${saveCountLine}
+        draw.text((5, 54), f"48h trend ({unit}):", font=font_small, fill=0)
+        draw_sparkline(draw, history_values, x=5, y=68, width=240, height=50)
+        if flip180:
+            image = image.rotate(180)
+        buf = epd.getbuffer(image)
+        if do_full_refresh:
+            epd.init()
+            epd.Clear(0xFF)
+            epd.display(buf)
+            epd.displayPartBaseImage(buf)
+        else:
+            epd.init()
+            epd.displayPartial(buf)
+        epd.sleep()${saveCountLine}
+    finally:
+        _epd_unlock(fd)
 
 def main():
     cfg = load_config()
@@ -1170,7 +1247,7 @@ if __name__ == "__main__":
   // MULTI-GAUGE (2.7", 4-button) PYTHON SCRIPT
   // ==================================================================
   function buildPythonScriptMulti(opts){
-    const apEnabled = opts.fallbackAp && opts.fallbackApPassword && opts.fallbackApPassword.length >= 8;
+    const apEnabled = opts.fallbackAp;
     const gauges = opts.gauges;
     const gaugesDict = gauges.map(g => {
       const paramCode = g.measurement === 'gaugeHeight' ? '00065' : '00060';
@@ -1208,9 +1285,9 @@ def draw_trend_arrow(draw, trend, x, y, size=14):
 ` : '';
 
     const trendCall = opts.trendArrow ? `
-        trend = get_trend(entry["history"])
-        arrow_x = min(8 + int(draw.textlength(value_text, font=font_body)) + 12, w - 26)
-        draw_trend_arrow(draw, trend, x=arrow_x, y=30, size=18)` : '';
+            trend = get_trend(entry["history"])
+            arrow_x = min(8 + int(draw.textlength(value_text, font=font_body)) + 12, w - 26)
+            draw_trend_arrow(draw, trend, x=arrow_x, y=30, size=18)` : '';
 
     const epdModule = opts.panel27Variant === 'v1' ? 'epd2in7' : 'epd2in7_V2';
     return `#!/usr/bin/env python3
@@ -1254,6 +1331,7 @@ import sys
 import time
 import json
 import socket
+import fcntl
 import threading${apEnabled ? '\nimport subprocess' : ''}
 import requests
 from datetime import datetime, timedelta
@@ -1265,6 +1343,30 @@ import RPi.GPIO as GPIO
 KEY_PINS = {1: 5, 2: 6, 3: 13, 4: 19}
 
 CONFIG_FILE = os.path.expanduser("~/river_display/config.json")
+
+EPD_LOCK_FILE = os.path.expanduser("~/river_display/epd.lock")
+
+def _epd_lock(timeout=5):
+    """Serializes e-paper access with the separate web config server -
+    it can also draw to the display now (a login PIN reveal), and the
+    SPI bus can't take two writers at once. Returns an open, locked
+    file handle on success (pass to _epd_unlock when done), or None if
+    the display stayed busy past the timeout."""
+    fd = open(EPD_LOCK_FILE, "w")
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return fd
+        except BlockingIOError:
+            time.sleep(0.1)
+    fd.close()
+    return None
+
+def _epd_unlock(fd):
+    if fd:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+        fd.close()
 
 # ---- Gauges baked in by the STAGE setup tool - the starting point,
 # and the fallback for any button config.json doesn't cover. The web
@@ -1385,6 +1487,62 @@ def in_fallback_hotspot_mode():
         print(f"in_fallback_hotspot_mode: IP-address check failed: {e}", file=sys.stderr)
         return False
 
+HOTSPOT_PIN_FILE = os.path.expanduser("~/river_display/hotspot_pin.txt")
+HOTSPOT_PIN_ROTATE_SECONDS = 300  # 5 minutes - this script runs as a
+# continuous daemon, so unlike the single-gauge (cron-driven) variant it
+# can afford a real timer here instead of piggybacking on the refresh
+# schedule, giving something closer to an actual 2FA-style cadence.
+
+def _hotspot_client_connected():
+    """True if a phone/laptop is currently associated with the hotspot -
+    checked before rotating the PIN so a change never gets pulled out
+    from under someone mid-setup. Requires the 'iw' package."""
+    try:
+        result = subprocess.run(["iw", "dev", "wlan0", "station", "dump"],
+                                 capture_output=True, text=True, timeout=5)
+        return bool(result.stdout.strip())
+    except Exception:
+        return False
+
+def _generate_hotspot_pin():
+    import random
+    return "".join(str(random.randint(0, 9)) for _ in range(8))
+
+def _rotate_hotspot_pin_if_due():
+    """Generates a fresh PIN (or the very first one) and applies it as
+    the hotspot's WPA2 password if it's due to rotate, but only when
+    nobody's currently connected. Returns whatever PIN is in effect."""
+    try:
+        age = time.time() - os.stat(HOTSPOT_PIN_FILE).st_mtime
+        current_pin = open(HOTSPOT_PIN_FILE).read().strip()
+    except (FileNotFoundError, OSError):
+        age, current_pin = None, None
+
+    due = age is None or age >= HOTSPOT_PIN_ROTATE_SECONDS
+    if due and not _hotspot_client_connected():
+        new_pin = _generate_hotspot_pin()
+        subprocess.run(["sudo", "-n", "nmcli", "connection", "modify", "Hotspot",
+                         "wifi-sec.psk", new_pin], capture_output=True, timeout=10)
+        subprocess.run(["sudo", "-n", "nmcli", "connection", "up", "Hotspot"],
+                        capture_output=True, timeout=15)
+        with open(HOTSPOT_PIN_FILE, "w") as f:
+            f.write(new_pin)
+        return new_pin
+    return current_pin or "generating…"
+
+def hotspot_pin_worker():
+    """Runs continuously in the background. Whenever the hotspot is
+    active, redraws the recovery screen with a freshly rotated PIN
+    every HOTSPOT_PIN_ROTATE_SECONDS - like a 2FA code that changes
+    periodically, except it waits until nobody's mid-setup to do so."""
+    while True:
+        if in_fallback_hotspot_mode():
+            _rotate_hotspot_pin_if_due()
+            render(current_button, full_refresh=True)
+            time.sleep(HOTSPOT_PIN_ROTATE_SECONDS)
+        else:
+            time.sleep(15)
+
 def draw_fallback_hotspot_screen(draw, w, h, font_title, font_small):
     """Replaces the normal gauge view with WiFi recovery instructions
     while the fallback hotspot is active - discoverable without already
@@ -1392,14 +1550,17 @@ def draw_fallback_hotspot_screen(draw, w, h, font_title, font_small):
     hostname, read fresh at render time - STAGE has no way to know it
     in advance, since it's set independently in Raspberry Pi Imager."""
     hostname = socket.gethostname()
-    draw.text((8, 8), "WiFi lost — reconnect:", font=font_title, fill=0)
-    draw.text((8, 34), "1. Join WiFi:", font=font_small, fill=0)
+    pin = _rotate_hotspot_pin_if_due()
+    draw.text((8, 6), "WiFi lost — reconnect:", font=font_title, fill=0)
+    draw.text((8, 32), "1. Join WiFi:", font=font_small, fill=0)
     ssid_display = truncate_to_width(draw, FALLBACK_AP_SSID, font_title, w - 16)
-    draw.text((8, 48), ssid_display, font=font_title, fill=0)
-    draw.text((8, 84), "2. Then visit:", font=font_small, fill=0)
+    draw.text((8, 46), ssid_display, font=font_title, fill=0)
+    draw.text((8, 78), "2. Enter PIN:", font=font_small, fill=0)
+    draw.text((8, 92), pin, font=font_title, fill=0)
+    draw.text((8, 124), "3. Then visit:", font=font_small, fill=0)
     url_display = truncate_to_width(draw, f"{hostname}.local:8080", font_title, w - 16)
-    draw.text((8, 98), url_display, font=font_title, fill=0)
-    draw.text((8, 140), "(or 10.42.0.1:8080)", font=font_small, fill=0)
+    draw.text((8, 138), url_display, font=font_title, fill=0)
+    draw.text((8, 162), "PIN refreshes while idle", font=font_small, fill=0)
 ` : ''}
 HISTORY_PERIOD = "P2D"
 REFRESH_MINUTES = set(${JSON.stringify(opts.minutes)})
@@ -1515,76 +1676,83 @@ def refresh_all():
 def render(button_num, full_refresh=True):
     with cache_lock:
         entry = cache.get(button_num)
-    epd = epd_driver.EPD()
-    w, h = epd.height, epd.width  # landscape orientation, matches epd2in13 convention
-    image = Image.new('1', (w, h), 255)
-    draw = ImageDraw.Draw(image)
-    font_title = ImageFont.truetype(FONT_PATH_BOLD, 16)
-    font_body = ImageFont.truetype(FONT_PATH_BOLD, 40)
-    font_small = ImageFont.truetype(FONT_PATH_REG, 11)
+    fd = _epd_lock()
+    if fd is None:
+        print("render: display busy (config page mid-draw?), skipping this refresh", file=sys.stderr)
+        return
+    try:
+        epd = epd_driver.EPD()
+        w, h = epd.height, epd.width  # landscape orientation, matches epd2in13 convention
+        image = Image.new('1', (w, h), 255)
+        draw = ImageDraw.Draw(image)
+        font_title = ImageFont.truetype(FONT_PATH_BOLD, 16)
+        font_body = ImageFont.truetype(FONT_PATH_BOLD, 40)
+        font_small = ImageFont.truetype(FONT_PATH_REG, 11)
 
-    if entry is None:
-        draw.text((8, 8), "No data yet", font=font_title, fill=0)
-        draw.text((8, h // 2 - 6), f"Button {button_num} is not configured", font=font_small, fill=0)
-${apEnabled ? `    elif in_fallback_hotspot_mode():
-        # Takes priority over the normal view - there's no real internet
-        # right now, so a recovery message is more useful than even a
-        # configured gauge's stale cached reading.
-        draw_fallback_hotspot_screen(draw, w, h, font_title, font_small)
-` : ''}    else:
-        # Row 1: label (left) + last 3 digits of the Pi's IP (right) - so
-        # it's easy to tell which device this is on a network with more
-        # than one running. Kept off Row 3 below on purpose: that row is
-        # already a tight fit between the reading's own "as of" timestamp
-        # and "Updated H:MM", and appending the IP there pushed the two
-        # into each other. The IP suffix is measured first (fixed to the
-        # right edge) and the label is truncated with an ellipsis if it
-        # would otherwise run into it.
-        ip_str = f".{get_ip_suffix()}"
-        ip_w = draw.textlength(ip_str, font=font_small)
-        ip_x = w - 8 - ip_w
-        display_label = truncate_to_width(draw, entry["label"], font_title, ip_x - 8)
-        draw.text((8, 4), display_label, font=font_title, fill=0)
-        draw.text((ip_x, 6), ip_str, font=font_small, fill=0)
-        draw_wifi_icon(draw, w - 16, 27)
+        if entry is None:
+            draw.text((8, 8), "No data yet", font=font_title, fill=0)
+            draw.text((8, h // 2 - 6), f"Button {button_num} is not configured", font=font_small, fill=0)
+${apEnabled ? `        elif in_fallback_hotspot_mode():
+            # Takes priority over the normal view - there's no real internet
+            # right now, so a recovery message is more useful than even a
+            # configured gauge's stale cached reading.
+            draw_fallback_hotspot_screen(draw, w, h, font_title, font_small)
+` : ''}        else:
+            # Row 1: label (left) + last 3 digits of the Pi's IP (right) - so
+            # it's easy to tell which device this is on a network with more
+            # than one running. Kept off Row 3 below on purpose: that row is
+            # already a tight fit between the reading's own "as of" timestamp
+            # and "Updated H:MM", and appending the IP there pushed the two
+            # into each other. The IP suffix is measured first (fixed to the
+            # right edge) and the label is truncated with an ellipsis if it
+            # would otherwise run into it.
+            ip_str = f".{get_ip_suffix()}"
+            ip_w = draw.textlength(ip_str, font=font_small)
+            ip_x = w - 8 - ip_w
+            display_label = truncate_to_width(draw, entry["label"], font_title, ip_x - 8)
+            draw.text((8, 4), display_label, font=font_title, fill=0)
+            draw.text((ip_x, 6), ip_str, font=font_small, fill=0)
+            draw_wifi_icon(draw, w - 16, 27)
 
-        # Row 2: the big reading. Trend arrow (if enabled) is placed
-        # dynamically just past the end of this text via textlength, and
-        # clamped so it can never run off the right edge - a fixed x here
-        # would either clip a 5-digit cfs value or leave a huge gap for a
-        # short one.
-        value_text = f'{entry["value"]} {entry["unit"]}'
-        draw.text((8, 26), value_text, font=font_body, fill=0)
+            # Row 2: the big reading. Trend arrow (if enabled) is placed
+            # dynamically just past the end of this text via textlength, and
+            # clamped so it can never run off the right edge - a fixed x here
+            # would either clip a 5-digit cfs value or leave a huge gap for a
+            # short one.
+            value_text = f'{entry["value"]} {entry["unit"]}'
+            draw.text((8, 26), value_text, font=font_body, fill=0)
 ${trendCall}
 
-        # Row 3: the reading's own timestamp (left) + when this screen was
-        # last rendered (right-aligned, so it never collides regardless of
-        # font metrics) - on its own line below the number rather than
-        # beside it, so it can't overlap a wide value.
-        # (font_body=40 digits run ~40-44px tall from a y=26 baseline, so
-        # this row starts with a deliberate few-pixel buffer below that.)
-        ts_full = format_timestamp(entry["time"])
-        draw.text((8, 76), f"as of {ts_full}", font=font_small, fill=0)
-        refresh_str = datetime.now().strftime("Updated %I:%M %p")
-        refresh_w = draw.textlength(refresh_str, font=font_small)
-        draw.text((w - 8 - refresh_w, 76), refresh_str, font=font_small, fill=0)
+            # Row 3: the reading's own timestamp (left) + when this screen was
+            # last rendered (right-aligned, so it never collides regardless of
+            # font metrics) - on its own line below the number rather than
+            # beside it, so it can't overlap a wide value.
+            # (font_body=40 digits run ~40-44px tall from a y=26 baseline, so
+            # this row starts with a deliberate few-pixel buffer below that.)
+            ts_full = format_timestamp(entry["time"])
+            draw.text((8, 76), f"as of {ts_full}", font=font_small, fill=0)
+            refresh_str = datetime.now().strftime("Updated %I:%M %p")
+            refresh_w = draw.textlength(refresh_str, font=font_small)
+            draw.text((w - 8 - refresh_w, 76), refresh_str, font=font_small, fill=0)
 
-        # Row 4: trend label + sparkline, sized to whatever's left of the
-        # 176px height after the rows above
-        draw.text((8, 94), f'48h trend ({entry["unit"]}):', font=font_small, fill=0)
-        history_values = [v for _, v in entry["history"]]  # plain values for the plot
-        draw_sparkline(draw, history_values, x=8, y=108, width=w - 16, height=h - 116)
+            # Row 4: trend label + sparkline, sized to whatever's left of the
+            # 176px height after the rows above
+            draw.text((8, 94), f'48h trend ({entry["unit"]}):', font=font_small, fill=0)
+            history_values = [v for _, v in entry["history"]]  # plain values for the plot
+            draw_sparkline(draw, history_values, x=8, y=108, width=w - 16, height=h - 116)
 
-    if load_flip180():
-        image = image.rotate(180)
-    buf = epd.getbuffer(image)
-    epd.init()
-    if full_refresh:
-        epd.Clear(${opts.panel27Variant === 'v1' ? '0xFF' : ''})
-        epd.display(buf)
-    else:
-        epd.displayPartial(buf)
-    epd.sleep()
+        if load_flip180():
+            image = image.rotate(180)
+        buf = epd.getbuffer(image)
+        epd.init()
+        if full_refresh:
+            epd.Clear(${opts.panel27Variant === 'v1' ? '0xFF' : ''})
+            epd.display(buf)
+        else:
+            epd.displayPartial(buf)
+        epd.sleep()
+    finally:
+        _epd_unlock(fd)
 
 def button_worker():
     """
@@ -1691,7 +1859,7 @@ def main():
     render(current_button, full_refresh=True)
     threading.Thread(target=scheduler_worker, daemon=True).start()
     threading.Thread(target=force_refresh_worker, daemon=True).start()
-    button_worker()  # runs forever on the main thread
+${apEnabled ? '    threading.Thread(target=hotspot_pin_worker, daemon=True).start()\n' : ''}    button_worker()  # runs forever on the main thread
 
 if __name__ == "__main__":
     main()
@@ -1900,7 +2068,22 @@ button{margin-top:20px;padding:10px 18px;background:#E8C468;color:#0D2431;border
 .network-chip{margin:0;padding:6px 10px;background:#0A1D28;color:#E7F1F5;border:1px solid #2B5064;border-radius:3px;font-size:12.5px;font-weight:400;cursor:pointer;white-space:nowrap}
 .network-chip:hover{border-color:#7EC8E3;color:#7EC8E3}
 .network-chip.selected{border-color:#E8C468;color:#E8C468}
-a{color:#7EC8E3}.hint{font-size:12px;color:#7FA3B3;margin-top:24px}`;
+a{color:#7EC8E3}.hint{font-size:12px;color:#7FA3B3;margin-top:24px}
+.test-site-btn{margin-top:8px;padding:6px 12px;background:none;border:1px solid #2B5064;color:#7EC8E3;border-radius:3px;font-size:12.5px;cursor:pointer}
+.test-site-btn:hover{border-color:#7EC8E3}
+.test-site-btn:disabled{opacity:0.5;cursor:default}
+.gauge-test-result{font-size:12.5px;margin-top:8px;line-height:1.5;display:none}
+.gauge-test-result.pending{display:block;color:#7FA3B3}
+.gauge-test-result.success{display:block;color:#8FCB9B}
+.gauge-test-result.error{display:block;color:#E8896B}
+.gauge-test-result .gauge-test-time{color:#7FA3B3}
+.status-box{border:1px solid #2B5064;border-radius:3px;padding:12px;margin-top:16px;font-size:13px}
+.status-box h2{font-size:13px;margin:0 0 8px;color:#7EC8E3}
+.status-row{display:flex;justify-content:space-between;gap:12px;margin-top:4px}
+.status-row .k{color:#7FA3B3;white-space:nowrap}
+.status-ok{color:#8FCB9B}
+.status-bad{color:#E8896B}
+.refresh-btn{background:none;border:1px solid #2B5064;color:#7EC8E3;margin-top:8px;padding:8px 14px}`;
 
   // Shared "join a WiFi network" section - only wired in when the
   // fallback hotspot is enabled, since that's also what installs the
@@ -1991,6 +2174,45 @@ fetch("/wifi-scan").then(function(r){ return r.json(); }).then(function(names){
             return
 `;
 
+  // Different OSes probe one of these well-known paths right after
+  // joining a network to decide whether to pop up a "sign in to
+  // network" prompt automatically - a plain 200/302 (instead of the
+  // "everything's fine" response they expect) is what triggers that
+  // prompt, which is what turns "visit this URL" into "a page just
+  // shows up". Combined with the wildcard DNS the installer sets up
+  // for the hotspot (every hostname resolves to the Pi itself), any
+  // of these probes - whichever domain they were aimed at - lands
+  // here and gets bounced to the real page.
+  const CAPTIVE_PORTAL_ROUTES_PY = `
+        if self.path in ("/generate_204", "/gen_204", "/hotspot-detect.html",
+                          "/library/test/success.html", "/ncsi.txt", "/connecttest.txt"):
+            self.send_response(302)
+            self.send_header("Location", "/")
+            self.end_headers()
+            return
+`;
+
+  // A scannable link to this page's own URL - unauthenticated on
+  // purpose, since it only encodes the address (same as printing it on
+  // a label), not anything that grants access by itself. Meant to be
+  // visited once (e.g. http://<hostname>.local:8080/qr.png) so the
+  // image can be saved and printed or stuck in with the device - a
+  // recipient then just points a camera at it instead of typing
+  // anything. Uses the Pi's own live hostname, since that's the one
+  // thing STAGE can't know in advance (it's set independently in
+  // Raspberry Pi Imager).
+  const QR_ROUTE_PY = `
+        if self.path == "/qr.png":
+            img = qrcode.make(f"http://{socket.gethostname()}.local:8080")
+            buf = io.BytesIO()
+            img.save(buf, format="PNG")
+            self.send_response(200)
+            self.send_header("Content-Type", "image/png")
+            self.end_headers()
+            self.wfile.write(buf.getvalue())
+            return
+`;
+
   const WIFI_POST_PY = `
         if self.path == "/wifi":
             length = int(self.headers.get("Content-Length", 0))
@@ -2022,47 +2244,174 @@ FAILED_LOGIN_MAX = 5
 FAILED_LOGIN_LOCKOUT_SECONDS = 60
 _failed_logins = {}  # source IP -> {"count": int, "locked_until": epoch float}
 
-def check_auth(handler):
-    ip = handler.client_address[0]
-    now = time.time()
-    entry = _failed_logins.get(ip)
-    if entry and entry["locked_until"] > now:
-        remaining = int(entry["locked_until"] - now)
-        handler.send_response(429)
-        handler.send_header("Content-Type", "text/plain; charset=utf-8")
-        handler.send_header("Retry-After", str(remaining))
-        handler.end_headers()
-        handler.wfile.write(f"Too many attempts - try again in {remaining}s.".encode("utf-8"))
-        return False
+SESSION_VALID_SECONDS = 1800  # 30 minutes
+_sessions = {}  # token -> expiry epoch float
+_session_lock = threading.Lock()
 
-    auth = handler.headers.get("Authorization", "")
-    if auth.startswith("Basic "):
+CONFIG_PIN_FILE = os.path.expanduser("~/river_display/config_pin.txt")
+CONFIG_PIN_VALID_SECONDS = 180  # how long a freshly-shown PIN stays valid
+EPD_LOCK_FILE = os.path.expanduser("~/river_display/epd.lock")
+_pin_revert_timer = None
+_pin_generate_lock = threading.Lock()
+
+def _epd_lock(timeout=5):
+    """Serializes e-paper access between this web server and the
+    separate display process - both can now want to draw at once (a
+    PIN reveal here vs. a scheduled gauge refresh there), and the SPI
+    bus can't take two writers at the same time. Returns an open,
+    locked file handle on success (pass to _epd_unlock when done), or
+    None if the display stayed busy past the timeout."""
+    fd = open(EPD_LOCK_FILE, "w")
+    deadline = time.time() + timeout
+    while time.time() < deadline:
         try:
-            decoded = base64.b64decode(auth[6:]).decode("utf-8")
-            user, _, password = decoded.partition(":")
-        except Exception:
-            user, password = "", ""
-        if hmac.compare_digest(user, AUTH_USER) and hmac.compare_digest(password, AUTH_PASS):
-            _failed_logins.pop(ip, None)  # a good login clears any prior strikes
-            return True
-        # Credentials were actually supplied and wrong - this is a real
-        # guess, count it. (A bare request with no Authorization header
-        # at all is just the normal first step of the Basic Auth
-        # handshake - every browser does this before it even prompts
-        # the user - so that case falls through below WITHOUT being
-        # counted as an attempt.)
-        entry = _failed_logins.setdefault(ip, {"count": 0, "locked_until": 0})
-        entry["count"] += 1
-        if entry["count"] >= FAILED_LOGIN_MAX:
-            entry["locked_until"] = now + FAILED_LOGIN_LOCKOUT_SECONDS
-            entry["count"] = 0
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return fd
+        except BlockingIOError:
+            time.sleep(0.1)
+    fd.close()
+    return None
 
-    handler.send_response(401)
-    handler.send_header("WWW-Authenticate", 'Basic realm="River display config"')
-    handler.send_header("Content-Type", "text/plain; charset=utf-8")
-    handler.end_headers()
-    handler.wfile.write(b"Password required.")
-    return False
+def _epd_unlock(fd):
+    if fd:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+        fd.close()
+
+def _current_config_pin():
+    """The PIN currently valid for logging in, if one's been shown
+    recently enough - None once it's expired, which folds back into
+    check_session as an ordinary logged-out state."""
+    try:
+        pin, ts = open(CONFIG_PIN_FILE).read().strip().split("|")
+        if time.time() - float(ts) < CONFIG_PIN_VALID_SECONDS:
+            return pin
+    except Exception:
+        pass
+    return None
+
+def _reveal_config_pin():
+    """Generates a fresh PIN if none is currently valid, draws it on
+    the e-paper in place of whatever it's normally showing, and
+    schedules a revert once it expires - like a 2FA code that only
+    appears when someone actually tries the door. Debounced: while a
+    PIN is still valid, repeat calls (a browser's normal flurry of
+    preflight/favicon requests) just reuse it rather than flashing the
+    screen or resetting the countdown each time.
+
+    The whole check-generate-write sequence is wrapped in a lock: this
+    server now listens on two ports at once (80 and 8080), each on its
+    own thread, so two near-simultaneous requests could otherwise both
+    see no valid PIN, each generate a different one, and race on which
+    ends up in the file versus which ends up drawn on screen. The lock
+    makes sure only one PIN gets generated and shown at a time."""
+    global _pin_revert_timer
+    import random
+    with _pin_generate_lock:
+        pin = _current_config_pin()
+        if pin is not None:
+            return pin
+
+        pin = "".join(str(random.randint(0, 9)) for _ in range(8))
+        with open(CONFIG_PIN_FILE, "w") as f:
+            f.write(f"{pin}|{time.time()}")
+
+        fd = _epd_lock()
+        if fd is None:
+            print("_reveal_config_pin: display busy, PIN not shown on screen", file=sys.stderr)
+        else:
+            try:
+                epd = epd_driver.EPD()
+                image = Image.new('1', (epd.height, epd.width), 255)
+                draw = ImageDraw.Draw(image)
+                font_title = ImageFont.truetype(FONT_PATH_BOLD, 16)
+                font_small = ImageFont.truetype(FONT_PATH_REG, 11)
+                draw.text((8, 10), "Config access requested", font=font_title, fill=0)
+                draw.text((8, 34), "Enter this PIN:", font=font_small, fill=0)
+                draw.text((8, 48), pin, font=font_title, fill=0)
+                draw.text((8, 76), "(expires in a few minutes)", font=font_small, fill=0)
+                if _get_flip180():
+                    image = image.rotate(180)
+                buf = epd.getbuffer(image)
+                epd.init()
+                epd.Clear(0xFF)
+                epd.display(buf)
+                epd.displayPartBaseImage(buf)
+                epd.sleep()
+            except Exception as e:
+                print(f"_reveal_config_pin: draw failed: {e}", file=sys.stderr)
+            finally:
+                _epd_unlock(fd)
+
+        if _pin_revert_timer:
+            _pin_revert_timer.cancel()
+        _pin_revert_timer = threading.Timer(CONFIG_PIN_VALID_SECONDS, _revert_display)
+        _pin_revert_timer.daemon = True
+        _pin_revert_timer.start()
+        return pin
+
+def _revert_display_after_login():
+    """Called right after a successful login - no reason to keep
+    showing the PIN once someone's actually gotten in."""
+    global _pin_revert_timer
+    if _pin_revert_timer:
+        _pin_revert_timer.cancel()
+        _pin_revert_timer = None
+    _revert_display()
+
+def _invalidate_config_pin():
+    """Burns the current PIN the moment it's used successfully, rather
+    than leaving it valid for the rest of its window - makes it a
+    genuine one-time code instead of a reusable one, so a PIN glimpsed
+    on the display (or jotted down) can't log someone else in after
+    you've already used it. The next visitor, including this same
+    browser after the session expires, gets a freshly generated one."""
+    try:
+        os.remove(CONFIG_PIN_FILE)
+    except FileNotFoundError:
+        pass
+
+def _get_session_token(handler):
+    """Reads the session cookie off an incoming request, if present."""
+    raw = handler.headers.get("Cookie", "")
+    cookie = http.cookies.SimpleCookie()
+    try:
+        cookie.load(raw)
+    except Exception:
+        return None
+    return cookie["session"].value if "session" in cookie else None
+
+def _create_session():
+    """Issues a fresh, unguessable session token good for
+    SESSION_VALID_SECONDS - this is what the PIN actually buys once
+    entered. Re-typing an 8-digit PIN on every single request would
+    defeat the point of a PIN-only login, so this is what stands in
+    for it afterward. Uses secrets (not the PIN's plain random.randint)
+    since this token has to resist guessing on its own, independent of
+    the login PIN's own rate-limit protection."""
+    token = secrets.token_urlsafe(32)
+    with _session_lock:
+        _sessions[token] = time.time() + SESSION_VALID_SECONDS
+    return token
+
+def _destroy_session(handler):
+    token = _get_session_token(handler)
+    if token:
+        with _session_lock:
+            _sessions.pop(token, None)
+
+def check_session(handler):
+    """True if this request carries a still-valid session cookie. Pure
+    check with no side effects - callers decide what to do when it's
+    False (show the login form)."""
+    token = _get_session_token(handler)
+    if not token:
+        return False
+    with _session_lock:
+        expiry = _sessions.get(token)
+        if expiry and expiry > time.time():
+            return True
+        _sessions.pop(token, None)
+        return False
 
 def check_csrf_header(handler):
     if handler.headers.get("X-Requested-With") != "XMLHttpRequest":
@@ -2072,6 +2421,212 @@ def check_csrf_header(handler):
         handler.wfile.write(b"Missing required header - use the page's own form, not a direct link.")
         return False
     return True
+
+LOGIN_PAGE_HTML = """<!DOCTYPE html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>STAGE login</title><style>${CONFIG_PAGE_CSS}</style></head><body>
+<h1>STAGE</h1>
+<p class="sub">Enter the PIN shown on the device's display.</p>
+{msg}
+<form method="POST" action="/login">
+<label>PIN<input type="text" name="pin" inputmode="numeric" pattern="[0-9]*" autocomplete="off" autofocus maxlength="8"></label>
+<button type="submit">Log in</button>
+</form>
+</body></html>"""
+`;
+
+  // Live USGS checks and basic device diagnostics for the config
+  // page - shared between both display variants since none of it
+  // depends on gauge-specific rendering. Runs from the Pi itself
+  // rather than the browser, so a check here also verifies the Pi's
+  // own path to USGS, not just whether a site number is valid.
+  const STATUS_PY_FUNCS = `
+def _fetch_usgs_reading(site_no, param_code, timeout=6):
+    try:
+        resp = requests.get(
+            "https://waterservices.usgs.gov/nwis/iv/",
+            params={"format": "json", "sites": site_no, "parameterCd": param_code, "siteStatus": "active"},
+            timeout=timeout,
+        )
+        resp.raise_for_status()
+        series = resp.json().get("value", {}).get("timeSeries", [])
+        if not series:
+            return {"ok": False, "error": "No active site reporting that measurement."}
+        s = series[0]
+        site_name = (s.get("sourceInfo") or {}).get("siteName", "Unknown site")
+        latest = s["values"][0]["value"][0]
+        return {"ok": True, "site_name": site_name, "value": latest["value"], "time": latest["dateTime"]}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+def _fetch_all_gauge_readings(gauges):
+    """Fetches every configured gauge's current reading concurrently -
+    sequential would mean one slow or timed-out USGS connection adds
+    up to 4x the wait before the page even loads."""
+    to_fetch = {b: g for b, g in gauges.items() if g["site_no"]}
+    results = {}
+    if not to_fetch:
+        return results
+    with ThreadPoolExecutor(max_workers=len(to_fetch)) as pool:
+        futures = {
+            b: pool.submit(_fetch_usgs_reading, g["site_no"], "00065" if g["measurement"] == "gaugeHeight" else "00060")
+            for b, g in to_fetch.items()
+        }
+        for b, fut in futures.items():
+            results[b] = fut.result()
+    return results
+
+def _get_wifi_signal():
+    try:
+        result = subprocess.run(["iw", "dev", "wlan0", "link"], capture_output=True, text=True, timeout=5)
+        for line in result.stdout.splitlines():
+            line = line.strip()
+            if line.startswith("signal:"):
+                return line.split("signal:", 1)[1].strip()
+    except Exception:
+        pass
+    return None
+
+def _get_uptime():
+    try:
+        with open("/proc/uptime") as f:
+            seconds = float(f.read().split()[0])
+        days, rem = divmod(int(seconds), 86400)
+        hours, rem = divmod(rem, 3600)
+        minutes = rem // 60
+        parts = []
+        if days:
+            parts.append(f"{days}d")
+        if hours:
+            parts.append(f"{hours}h")
+        parts.append(f"{minutes}m")
+        return " ".join(parts)
+    except Exception:
+        return None
+`;
+
+  const TEST_SITE_ROUTE_PY = `
+        if self.path.startswith("/test-site"):
+            from urllib.parse import urlparse as _urlparse
+            qs = parse_qs(_urlparse(self.path).query)
+            site_no = qs.get("site_no", [""])[0].strip()
+            measurement = qs.get("measurement", ["discharge"])[0]
+            param_code = "00065" if measurement == "gaugeHeight" else "00060"
+            if not site_no.isdigit():
+                result = {"ok": False, "error": "Enter a valid USGS site number (digits only)."}
+            else:
+                result = _fetch_usgs_reading(site_no, param_code)
+            body = json.dumps(result).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(body)
+            return
+`;
+
+  // Client-side companion for TEST_SITE_ROUTE_PY - hits the Pi's own
+  // /test-site endpoint (not USGS directly), so the check reflects
+  // whether the Pi itself can reach USGS, not just the browser.
+  const TEST_SITE_JS = `<script>
+async function testSiteLive(inputId, selectId, resultId, btnId){
+  var input = document.getElementById(inputId);
+  var select = document.getElementById(selectId);
+  var resultEl = document.getElementById(resultId);
+  var btn = document.getElementById(btnId);
+  var site = input.value.trim();
+  if (!/^[0-9]{8,15}$/.test(site)){
+    resultEl.className = "gauge-test-result error";
+    resultEl.textContent = "Enter a valid USGS site number first (8-15 digits, no spaces).";
+    return;
+  }
+  var measurement = select.value;
+  var unitLabel = measurement === "gaugeHeight" ? "ft" : "cfs";
+  resultEl.className = "gauge-test-result pending";
+  resultEl.textContent = "Checking with USGS\u2026";
+  var originalLabel = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = "Checking\u2026";
+  try {
+    var resp = await fetch("/test-site?site_no=" + encodeURIComponent(site) + "&measurement=" + encodeURIComponent(measurement),
+      {headers: {"X-Requested-With": "XMLHttpRequest"}});
+    var data = await resp.json();
+    if (!data.ok){
+      resultEl.className = "gauge-test-result error";
+      resultEl.textContent = data.error || "Could not verify that site.";
+      return;
+    }
+    var when = new Date(data.time);
+    var whenStr = isNaN(when.getTime()) ? data.time : when.toLocaleString();
+    resultEl.className = "gauge-test-result success";
+    resultEl.innerHTML = "&#10003; <b>" + data.site_name + "</b> - " + data.value + " " + unitLabel + " <span class=\\"gauge-test-time\\">(as of " + whenStr + ")</span>";
+  } catch (err) {
+    resultEl.className = "gauge-test-result error";
+    resultEl.textContent = "Could not reach the Pi - check your connection and try again.";
+  } finally {
+    btn.disabled = false;
+    btn.textContent = originalLabel;
+  }
+}
+<${''}/script>`;
+
+  // Handler methods for the PIN-only login flow - identical for both
+  // display variants, since none of it depends on gauge-specific
+  // rendering, so it's defined once here and dropped into both
+  // Handler classes rather than duplicated.
+  const LOGIN_METHODS_PY = `
+    def _render_login(self, error=False):
+        _reveal_config_pin()
+        msg = '<p class="msg" style="color:#E8896B">Wrong PIN - check the display for the current one.</p>' if error else ""
+        body = LOGIN_PAGE_HTML.format(msg=msg)
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.end_headers()
+        self.wfile.write(body.encode("utf-8"))
+
+    def _handle_login(self):
+        ip = self.client_address[0]
+        now = time.time()
+        entry = _failed_logins.get(ip)
+        if entry and entry["locked_until"] > now:
+            remaining = int(entry["locked_until"] - now)
+            self.send_response(429)
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.send_header("Retry-After", str(remaining))
+            self.end_headers()
+            self.wfile.write(f"Too many attempts - try again in {remaining}s.".encode("utf-8"))
+            return
+
+        length = int(self.headers.get("Content-Length", 0))
+        fields = parse_qs(self.rfile.read(length).decode("utf-8"))
+        submitted = fields.get("pin", [""])[0].strip()
+        current_pin = _current_config_pin()
+
+        if current_pin and submitted and hmac.compare_digest(submitted, current_pin):
+            _failed_logins.pop(ip, None)  # a good login clears any prior strikes
+            _invalidate_config_pin()
+            token = _create_session()
+            _revert_display_after_login()
+            self.send_response(303)
+            self.send_header("Location", "/")
+            self.send_header("Set-Cookie", f"session={token}; HttpOnly; Path=/; Max-Age={SESSION_VALID_SECONDS}; SameSite=Strict")
+            self.end_headers()
+            return
+
+        # Credentials were actually supplied and wrong - a real guess,
+        # count it.
+        entry = _failed_logins.setdefault(ip, {"count": 0, "locked_until": 0})
+        entry["count"] += 1
+        if entry["count"] >= FAILED_LOGIN_MAX:
+            entry["locked_until"] = now + FAILED_LOGIN_LOCKOUT_SECONDS
+            entry["count"] = 0
+        self._render_login(error=True)
+
+    def _handle_logout(self):
+        _destroy_session(self)
+        self.send_response(303)
+        self.send_header("Location", "/")
+        self.send_header("Set-Cookie", "session=; Path=/; Max-Age=0")
+        self.end_headers()
 `;
 
   // Intercepts this page's own form submissions to add the header
@@ -2105,7 +2660,7 @@ document.querySelectorAll("form").forEach(function(form){
 <${''}/script>`;
 
   function buildConfigServerScriptSingle(opts){
-    const apEnabled = opts.fallbackAp && opts.fallbackApPassword && opts.fallbackApPassword.length >= 8;
+    const apEnabled = opts.fallbackAp;
     return `#!/usr/bin/env python3
 """
 STAGE web config page - change the USGS gauge (and confirm the device's
@@ -2119,18 +2674,47 @@ import json
 import os
 import socket
 import subprocess
-import base64
 import hmac
-import time${apEnabled ? '\nimport threading' : ''}
+import secrets
+import http.cookies
+import time
+import sys
+import fcntl
+import threading
+import requests
+from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import parse_qs
+from PIL import Image, ImageDraw, ImageFont
+from waveshare_epd import epd2in13_V4 as epd_driver
+import qrcode
+import io
+
+FONT_PATH_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+FONT_PATH_REG = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
 
 CONFIG_FILE = os.path.expanduser("~/river_display/config.json")
 DEFAULTS = {"site_no": "${opts.siteNo}", "measurement": "${opts.measurement}",
             "label": "${escPy(opts.label)}", "flip180": ${opts.flip180 ? 'True' : 'False'}}
 PORT = 8080
-AUTH_USER = "stage"
-AUTH_PASS = "${escPy(opts.configPassword)}"
+
+def _revert_display():
+    """No PIN screen to keep showing once it's expired or someone's
+    logged in - just re-run the normal display script, same as a
+    config save already does."""
+    try:
+        subprocess.Popen(["/usr/bin/python3", os.path.expanduser("~/river_display/river_display.py")])
+    except Exception as e:
+        print(f"_revert_display: {e}", file=sys.stderr)
+
+def _get_flip180():
+    """So the config-access PIN screen respects upside-down mounting
+    the same way every other screen this device draws does - otherwise
+    it'd be the one unreadable exception."""
+    try:
+        return load_config()["flip180"]
+    except Exception:
+        return False
 
 def load_config():
     cfg = dict(DEFAULTS)
@@ -2162,31 +2746,66 @@ def get_ip():
     except Exception:
         return "unknown"
 ${AUTH_PY_FUNCS}${apEnabled ? WIFI_PY_FUNCS + '\nWIFI_FORM_HTML = """' + WIFI_FORM_HTML + '"""' : ''}
+${STATUS_PY_FUNCS}
+def _get_diagnostics():
+    diag = {"uptime": _get_uptime(), "wifi_signal": _get_wifi_signal()}
+    try:
+        result = subprocess.run(["crontab", "-l"], capture_output=True, text=True, timeout=5)
+        diag["cron_active"] = "river_display.py" in result.stdout
+    except Exception:
+        diag["cron_active"] = None
+    return diag
+
 PAGE_HEAD = """<!DOCTYPE html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>River display config</title><style>${CONFIG_PAGE_CSS}</style></head><body>"""
+
+STATUS_BOX = """<div class="status-box"><h2>Status</h2>
+<div class="status-row"><span class="k">Current reading</span><span>{reading}</span></div>
+<div class="status-row"><span class="k">Uptime</span><span>{uptime}</span></div>
+<div class="status-row"><span class="k">WiFi signal</span><span>{wifi}</span></div>
+<div class="status-row"><span class="k">Schedule</span><span>{cron}</span></div>
+<form method="POST" action="/refresh" style="margin-top:8px;"><button type="submit" class="refresh-btn">Refresh now</button></form>
+</div>"""
 
 PAGE_FORM = """<h1>{label}</h1><p class="sub">Device IP: <span class="ip">{ip}</span> (last 3 digits shown on the e-paper display)</p>
 {msg}
 <form method="POST">
 <label>Display label<input type="text" name="label" value="{label_val}" maxlength="18"></label>
-<label>USGS site number<input type="text" name="site_no" value="{site_no}" pattern="[0-9]{{8,15}}" required></label>
-<label>Measurement<select name="measurement">
+<label>USGS site number<input type="text" name="site_no" id="siteNo" value="{site_no}" pattern="[0-9]{{8,15}}" required></label>
+<button type="button" class="test-site-btn" id="testSiteBtn" onclick="testSiteLive('siteNo','measurementSel','testSiteResult','testSiteBtn')">Test this site number</button>
+<div class="gauge-test-result" id="testSiteResult"></div>
+<label>Measurement<select name="measurement" id="measurementSel">
 <option value="discharge" {disc_sel}>Discharge (cfs)</option>
 <option value="gaugeHeight" {height_sel}>Gauge height (ft)</option>
 </select></label>
 <label class="checkrow"><input type="checkbox" name="flip180" value="1" {flip_checked}> Flip display 180° (for upside-down mounting)</label>
+<label class="checkrow"><input type="checkbox" name="logout_after_save" value="1"> Log out after saving</label>
 <button type="submit">Save &amp; refresh now</button>
 </form>
 <p class="hint">Find USGS site numbers at <a href="https://waterdata.usgs.gov/nwis/rt">waterdata.usgs.gov</a>.</p>"""
 
-PAGE_TAIL = """${FORM_INTERCEPT_HTML}
+PAGE_TAIL = """<p class="hint"><a href="/logout">Log out</a></p>${FORM_INTERCEPT_HTML}${TEST_SITE_JS}
 </body></html>"""
 
 class Handler(BaseHTTPRequestHandler):
     def _render(self, msg=""):
         cfg = load_config()
-        body = PAGE_HEAD + PAGE_FORM.format(
+        param_code = "00065" if cfg["measurement"] == "gaugeHeight" else "00060"
+        unit = "ft" if cfg["measurement"] == "gaugeHeight" else "cfs"
+        reading_result = _fetch_usgs_reading(cfg["site_no"], param_code) if cfg["site_no"] else {"ok": False, "error": "No site configured yet"}
+        if reading_result["ok"]:
+            reading = f'{reading_result["value"]} {unit} <span class="status-ok">&#10003;</span>'
+        else:
+            reading = f'<span class="status-bad">{reading_result["error"]}</span>'
+        diag = _get_diagnostics()
+        status_html = STATUS_BOX.format(
+            reading=reading,
+            uptime=diag["uptime"] or "unknown",
+            wifi=diag["wifi_signal"] or "unknown",
+            cron="scheduled" if diag["cron_active"] else "not found - re-run install script",
+        )
+        body = PAGE_HEAD + status_html + PAGE_FORM.format(
             label=cfg["label"], ip=get_ip(), msg=msg, label_val=cfg["label"],
             site_no=cfg["site_no"],
             disc_sel="selected" if cfg["measurement"] != "gaugeHeight" else "",
@@ -2199,15 +2818,30 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body.encode("utf-8"))
 
+    def _handle_refresh(self):
+        subprocess.Popen(["/usr/bin/python3", os.path.expanduser("~/river_display/river_display.py")])
+        self._render(msg='<p class="msg">Refreshing now\u2026</p>')
+${LOGIN_METHODS_PY}
     def do_GET(self):
-        if not check_auth(self):
+${QR_ROUTE_PY}${apEnabled ? CAPTIVE_PORTAL_ROUTES_PY : ''}        if self.path == "/logout":
+            self._handle_logout()
             return
-${apEnabled ? WIFI_ROUTES_PY : ''}        self._render()
+        if not check_session(self):
+            self._render_login()
+            return
+${apEnabled ? WIFI_ROUTES_PY : ''}${TEST_SITE_ROUTE_PY}        self._render()
 
     def do_POST(self):
-        if not check_auth(self):
+        if self.path == "/login":
+            self._handle_login()
+            return
+        if not check_session(self):
+            self._render_login()
             return
         if not check_csrf_header(self):
+            return
+        if self.path == "/refresh":
+            self._handle_refresh()
             return
 ${apEnabled ? WIFI_POST_PY : ''}        length = int(self.headers.get("Content-Length", 0))
         fields = parse_qs(self.rfile.read(length).decode("utf-8"))
@@ -2224,18 +2858,32 @@ ${apEnabled ? WIFI_POST_PY : ''}        length = int(self.headers.get("Content-L
         cfg["flip180"] = "flip180" in fields  # unchecked boxes are omitted entirely by browsers
         save_config(cfg)
         subprocess.Popen(["/usr/bin/python3", os.path.expanduser("~/river_display/river_display.py")])
+        if "logout_after_save" in fields:
+            _destroy_session(self)
+            self.send_response(303)
+            self.send_header("Location", "/")
+            self.send_header("Set-Cookie", "session=; Path=/; Max-Age=0")
+            self.end_headers()
+            return
         self._render(msg='<p class="msg">Saved - display is refreshing now.</p>')
 
     def log_message(self, format, *args):
         pass  # keep the systemd journal quiet
 
 if __name__ == "__main__":
-    HTTPServer(("0.0.0.0", PORT), Handler).serve_forever()
+${apEnabled ? `    # While the fallback hotspot is active, anyone freshly connected
+    # gets DNS-redirected here for any site they try to reach - listen
+    # on 80 too so the captive-portal prompt actually has something to
+    # land on (the AmbientCapabilities grant in the systemd unit is
+    # what lets this non-root service bind a port below 1024).
+    threading.Thread(target=lambda: HTTPServer(("0.0.0.0", 80), Handler).serve_forever(), daemon=True).start()
+` : ''}    HTTPServer(("0.0.0.0", PORT), Handler).serve_forever()
 `;
   }
 
   function buildConfigServerScriptMulti(opts){
-    const apEnabled = opts.fallbackAp && opts.fallbackApPassword && opts.fallbackApPassword.length >= 8;
+    const apEnabled = opts.fallbackAp;
+    const epdModule = opts.panel27Variant === 'v1' ? 'epd2in7' : 'epd2in7_V2';
     return `#!/usr/bin/env python3
 """
 STAGE web config page - change any of the 4 configured gauges (and
@@ -2249,11 +2897,25 @@ import json
 import os
 import socket
 import subprocess
-import base64
 import hmac
-import time${apEnabled ? '\nimport threading' : ''}
+import secrets
+import http.cookies
+import time
+import sys
+import fcntl
+import threading
+import requests
+from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import parse_qs
+from PIL import Image, ImageDraw, ImageFont
+from waveshare_epd import ${epdModule} as epd_driver
+import qrcode
+import io
+
+FONT_PATH_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+FONT_PATH_REG = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+FORCE_REFRESH_FILE = os.path.expanduser("~/river_display/.force_refresh")
 
 CONFIG_FILE = os.path.expanduser("~/river_display/config.json")
 DEFAULT_GAUGES = ${JSON.stringify(Object.fromEntries([1,2,3,4].map(b => {
@@ -2262,8 +2924,25 @@ DEFAULT_GAUGES = ${JSON.stringify(Object.fromEntries([1,2,3,4].map(b => {
     })))}
 DEFAULT_FLIP180 = ${opts.flip180 ? 'True' : 'False'}
 PORT = 8080
-AUTH_USER = "stage"
-AUTH_PASS = "${escPy(opts.configPassword)}"
+
+def _revert_display():
+    """No PIN screen to keep showing once it's expired or someone's
+    logged in - touch the same trigger file the daemon's own
+    force_refresh_worker already watches, so it redraws whichever
+    gauge was on screen before."""
+    try:
+        open(FORCE_REFRESH_FILE, "w").close()
+    except Exception as e:
+        print(f"_revert_display: {e}", file=sys.stderr)
+
+def _get_flip180():
+    """So the config-access PIN screen respects upside-down mounting
+    the same way every other screen this device draws does - otherwise
+    it'd be the one unreadable exception."""
+    try:
+        return load_full_config()["flip180"]
+    except Exception:
+        return False
 
 def load_full_config():
     """Everything in config.json as one dict, so saving one part (gauges
@@ -2295,9 +2974,29 @@ def get_ip():
     except Exception:
         return "unknown"
 ${AUTH_PY_FUNCS}${apEnabled ? WIFI_PY_FUNCS + '\nWIFI_FORM_HTML = """' + WIFI_FORM_HTML + '"""' : ''}
+${STATUS_PY_FUNCS}
+def _get_diagnostics():
+    diag = {"uptime": _get_uptime(), "wifi_signal": _get_wifi_signal()}
+    try:
+        result = subprocess.run(["systemctl", "is-active", "river-display.service"], capture_output=True, text=True, timeout=5)
+        diag["service_active"] = result.stdout.strip() == "active"
+    except Exception:
+        diag["service_active"] = None
+    return diag
+
 PAGE_HEAD = """<!DOCTYPE html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>River display config</title><style>${CONFIG_PAGE_CSS}</style></head><body>"""
+
+STATUS_BOX = """<div class="status-box"><h2>Status</h2>
+{gauge_rows}
+<div class="status-row"><span class="k">Uptime</span><span>{uptime}</span></div>
+<div class="status-row"><span class="k">WiFi signal</span><span>{wifi}</span></div>
+<div class="status-row"><span class="k">Display service</span><span>{service}</span></div>
+<form method="POST" action="/refresh" style="margin-top:8px;"><button type="submit" class="refresh-btn">Refresh now</button></form>
+</div>"""
+
+STATUS_GAUGE_ROW = """<div class="status-row"><span class="k">Button {b}</span><span>{reading}</span></div>"""
 
 PAGE_TOP = """<h1>River display</h1><p class="sub">Device IP: <span class="ip">{ip}</span> (last 3 digits shown on the e-paper display)</p>
 {msg}
@@ -2305,19 +3004,22 @@ PAGE_TOP = """<h1>River display</h1><p class="sub">Device IP: <span class="ip">{
 
 GAUGE_BLOCK = """<div class="gauge"><h2>Button {b}</h2>
 <label>Display label<input type="text" name="label{b}" value="{label}" maxlength="18"></label>
-<label>USGS site number (blank = button unused)<input type="text" name="site_no{b}" value="{site_no}" pattern="[0-9]{{0,15}}"></label>
-<label>Measurement<select name="measurement{b}">
+<label>USGS site number (blank = button unused)<input type="text" name="site_no{b}" id="siteNo{b}" value="{site_no}" pattern="[0-9]{{0,15}}"></label>
+<button type="button" class="test-site-btn" id="testSiteBtn{b}" onclick="testSiteLive('siteNo{b}','measurementSel{b}','testSiteResult{b}','testSiteBtn{b}')">Test this site number</button>
+<div class="gauge-test-result" id="testSiteResult{b}"></div>
+<label>Measurement<select name="measurement{b}" id="measurementSel{b}">
 <option value="discharge" {disc_sel}>Discharge (cfs)</option>
 <option value="gaugeHeight" {height_sel}>Gauge height (ft)</option>
 </select></label></div>"""
 
 PAGE_BOTTOM = """<label class="checkrow"><input type="checkbox" name="flip180" value="1" {flip_checked}> Flip display 180° (for upside-down mounting)</label>
+<label class="checkrow"><input type="checkbox" name="logout_after_save" value="1"> Log out after saving</label>
 <button type="submit">Save &amp; restart display</button>
 </form>
 <p class="hint">Find USGS site numbers at <a href="https://waterdata.usgs.gov/nwis/rt">waterdata.usgs.gov</a>.
 Saving restarts the display service, so the screen briefly blanks before showing the update.</p>"""
 
-PAGE_TAIL = """${FORM_INTERCEPT_HTML}
+PAGE_TAIL = """<p class="hint"><a href="/logout">Log out</a></p>${FORM_INTERCEPT_HTML}${TEST_SITE_JS}
 </body></html>"""
 
 class Handler(BaseHTTPRequestHandler):
@@ -2331,7 +3033,35 @@ class Handler(BaseHTTPRequestHandler):
                 height_sel="selected" if gauges[b]["measurement"] == "gaugeHeight" else "",
             ) for b in ("1", "2", "3", "4")
         )
-        body = (PAGE_HEAD + PAGE_TOP.format(ip=get_ip(), msg=msg) + blocks
+        readings = _fetch_all_gauge_readings(gauges)
+        gauge_rows = ""
+        for b in ("1", "2", "3", "4"):
+            if b not in readings:
+                continue
+            g = gauges[b]
+            result = readings[b]
+            if result["ok"]:
+                unit = "ft" if g["measurement"] == "gaugeHeight" else "cfs"
+                reading = f'{result["value"]} {unit}'
+            else:
+                reading = f'<span class="status-bad">{result["error"]}</span>'
+            gauge_rows += STATUS_GAUGE_ROW.format(b=b, reading=reading)
+        if not gauge_rows:
+            gauge_rows = '<div class="status-row"><span class="k">Gauges</span><span>none configured yet</span></div>'
+        diag = _get_diagnostics()
+        if diag["service_active"] is True:
+            service = '<span class="status-ok">active</span>'
+        elif diag["service_active"] is False:
+            service = '<span class="status-bad">not running</span>'
+        else:
+            service = "unknown"
+        status_html = STATUS_BOX.format(
+            gauge_rows=gauge_rows,
+            uptime=diag["uptime"] or "unknown",
+            wifi=diag["wifi_signal"] or "unknown",
+            service=service,
+        )
+        body = (PAGE_HEAD + status_html + PAGE_TOP.format(ip=get_ip(), msg=msg) + blocks
                 + PAGE_BOTTOM.format(flip_checked="checked" if cfg["flip180"] else ""))${apEnabled ? '\n        body += WIFI_FORM_HTML' : ''}
         body += PAGE_TAIL
         self.send_response(200)
@@ -2339,15 +3069,33 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body.encode("utf-8"))
 
+    def _handle_refresh(self):
+        try:
+            open(FORCE_REFRESH_FILE, "w").close()
+        except Exception as e:
+            print(f"_handle_refresh: {e}", file=sys.stderr)
+        self._render(msg='<p class="msg">Refreshing now\u2026</p>')
+${LOGIN_METHODS_PY}
     def do_GET(self):
-        if not check_auth(self):
+${QR_ROUTE_PY}${apEnabled ? CAPTIVE_PORTAL_ROUTES_PY : ''}        if self.path == "/logout":
+            self._handle_logout()
             return
-${apEnabled ? WIFI_ROUTES_PY : ''}        self._render()
+        if not check_session(self):
+            self._render_login()
+            return
+${apEnabled ? WIFI_ROUTES_PY : ''}${TEST_SITE_ROUTE_PY}        self._render()
 
     def do_POST(self):
-        if not check_auth(self):
+        if self.path == "/login":
+            self._handle_login()
+            return
+        if not check_session(self):
+            self._render_login()
             return
         if not check_csrf_header(self):
+            return
+        if self.path == "/refresh":
+            self._handle_refresh()
             return
 ${apEnabled ? WIFI_POST_PY : ''}        length = int(self.headers.get("Content-Length", 0))
         fields = parse_qs(self.rfile.read(length).decode("utf-8"))
@@ -2365,6 +3113,13 @@ ${apEnabled ? WIFI_POST_PY : ''}        length = int(self.headers.get("Content-L
         save_full_config(cfg)
         try:
             subprocess.run(["sudo", "-n", "systemctl", "restart", "river-display.service"], timeout=10)
+            if "logout_after_save" in fields:
+                _destroy_session(self)
+                self.send_response(303)
+                self.send_header("Location", "/")
+                self.send_header("Set-Cookie", "session=; Path=/; Max-Age=0")
+                self.end_headers()
+                return
             msg = '<p class="msg">Saved - display service restarting now.</p>'
         except Exception as e:
             msg = f'<p class="msg" style="color:#E8896B">Saved config, but restart failed ({e}). Run: sudo systemctl restart river-display.service</p>'
@@ -2374,7 +3129,13 @@ ${apEnabled ? WIFI_POST_PY : ''}        length = int(self.headers.get("Content-L
         pass  # keep the systemd journal quiet
 
 if __name__ == "__main__":
-    HTTPServer(("0.0.0.0", PORT), Handler).serve_forever()
+${apEnabled ? `    # While the fallback hotspot is active, anyone freshly connected
+    # gets DNS-redirected here for any site they try to reach - listen
+    # on 80 too so the captive-portal prompt actually has something to
+    # land on (the AmbientCapabilities grant in the systemd unit is
+    # what lets this non-root service bind a port below 1024).
+    threading.Thread(target=lambda: HTTPServer(("0.0.0.0", 80), Handler).serve_forever(), daemon=True).start()
+` : ''}    HTTPServer(("0.0.0.0", PORT), Handler).serve_forever()
 `;
   }
 
@@ -2387,7 +3148,7 @@ if __name__ == "__main__":
   // ==================================================================
   function buildBashScript(opts){
     const needsNmcliHelper = opts.wifiNetworks.length > 0 ||
-      (opts.fallbackAp && opts.fallbackApPassword && opts.fallbackApPassword.length >= 8);
+      (opts.fallbackAp);
     const nmcliHelperBlock = needsNmcliHelper ? `
 # ---- Helper: remove any existing connection(s) with a given name
 # before creating a new one, by UUID. "nmcli connection add" always
@@ -2415,7 +3176,7 @@ ${lines}
 `;
     }
 
-    const apEnabled = opts.fallbackAp && opts.fallbackApPassword && opts.fallbackApPassword.length >= 8;
+    const apEnabled = opts.fallbackAp;
     let fallbackApBlock = '';
     if (apEnabled){
       fallbackApBlock = `
@@ -2429,12 +3190,34 @@ ${lines}
 nmcli_replace "Hotspot"
 sudo nmcli connection add type wifi ifname wlan0 con-name "Hotspot" autoconnect yes ssid "${escBash(opts.fallbackApSsid)}"
 sudo nmcli connection modify "Hotspot" 802-11-wireless.mode ap 802-11-wireless.band bg ipv4.method shared
-sudo nmcli connection modify "Hotspot" wifi-sec.key-mgmt wpa-psk wifi-sec.psk "${escBash(opts.fallbackApPassword)}"
 sudo nmcli connection modify "Hotspot" connection.autoconnect-priority -10
 
-# ---- Let the web config page join new WiFi networks - narrowly-scoped
-# passwordless sudo, limited to these two nmcli forms only ----
-echo "%h ALL=(ALL) NOPASSWD: /usr/bin/nmcli device wifi connect *" | sed "s/%h/$(whoami)/" | sudo tee /etc/sudoers.d/river-display-wifi > /dev/null
+# ---- Send every DNS lookup from anyone on the hotspot straight back
+# to the Pi itself, whatever hostname they were actually trying to
+# reach - this is what lets a phone's own captive-portal check (which
+# probes an Apple/Google/Microsoft domain, not the Pi's address) land
+# on the config page instead of coming up empty. Drops into
+# NetworkManager's own dnsmasq instance for shared connections - no
+# separate dnsmasq install needed. ----
+sudo mkdir -p /etc/NetworkManager/dnsmasq-shared.d
+echo 'address=/#/10.42.0.1' | sudo tee /etc/NetworkManager/dnsmasq-shared.d/captive-portal.conf > /dev/null
+
+# ---- No fixed password to set here - a random 8-digit PIN just to get
+# the hotspot valid at first boot; the display script itself takes over
+# rotating it (and showing the current one on screen) from here. ----
+INITIAL_HOTSPOT_PIN=$(tr -dc '0-9' < /dev/urandom | head -c 8)
+sudo nmcli connection modify "Hotspot" wifi-sec.key-mgmt wpa-psk wifi-sec.psk "$INITIAL_HOTSPOT_PIN"
+mkdir -p ~/river_display
+echo "$INITIAL_HOTSPOT_PIN" > ~/river_display/hotspot_pin.txt
+
+# ---- Let the web config page join new WiFi networks, and let the
+# display script rotate the hotspot PIN - narrowly-scoped passwordless
+# sudo, limited to exactly these nmcli forms ----
+{
+  echo "%h ALL=(ALL) NOPASSWD: /usr/bin/nmcli device wifi connect *"
+  echo "%h ALL=(ALL) NOPASSWD: /usr/bin/nmcli connection modify Hotspot wifi-sec.psk *"
+  echo "%h ALL=(ALL) NOPASSWD: /usr/bin/nmcli connection up Hotspot"
+} | sed "s/%h/$(whoami)/" | sudo tee /etc/sudoers.d/river-display-wifi > /dev/null
 sudo chmod 440 /etc/sudoers.d/river-display-wifi
 `;
     }
@@ -2466,10 +3249,10 @@ sudo /usr/bin/tvservice -o 2>/dev/null || true
 
       return `# ---- 1. System dependencies ----
 sudo apt-get update
-sudo apt-get install -y python3-pip python3-pil python3-numpy git fonts-dejavu-core
+sudo apt-get install -y python3-pip python3-pil python3-numpy git fonts-dejavu-core iw
 
 # ---- 2. Python packages ----
-pip3 install requests RPi.GPIO spidev --break-system-packages
+pip3 install requests RPi.GPIO spidev qrcode --break-system-packages
 
 # ---- 3. Enable SPI (needed for the e-paper HAT) ----
 sudo raspi-config nonint do_spi 0
@@ -2548,7 +3331,9 @@ User=$(whoami)
 WorkingDirectory=/home/$(whoami)/river_display
 ExecStart=/usr/bin/python3 /home/$(whoami)/river_display/config_server.py
 Restart=on-failure
-RestartSec=10
+RestartSec=10${apEnabled ? `
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE` : ''}
 
 [Install]
 WantedBy=multi-user.target
@@ -2572,10 +3357,10 @@ echo "Change gauges anytime at: http://$(hostname -I | awk '{print $1}'):8080"
 
     return `# ---- 1. System dependencies ----
 sudo apt-get update
-sudo apt-get install -y python3-pip python3-pil python3-numpy git fonts-dejavu-core
+sudo apt-get install -y python3-pip python3-pil python3-numpy git fonts-dejavu-core iw
 
 # ---- 2. Python packages ----
-pip3 install requests RPi.GPIO spidev --break-system-packages
+pip3 install requests RPi.GPIO spidev qrcode --break-system-packages
 
 # ---- 3. Enable SPI (needed for the e-paper HAT) ----
 sudo raspi-config nonint do_spi 0
@@ -2624,7 +3409,9 @@ User=$(whoami)
 WorkingDirectory=/home/$(whoami)/river_display
 ExecStart=/usr/bin/python3 /home/$(whoami)/river_display/config_server.py
 Restart=on-failure
-RestartSec=10
+RestartSec=10${apEnabled ? `
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE` : ''}
 
 [Install]
 WantedBy=multi-user.target
@@ -2663,8 +3450,6 @@ echo "Change the gauge anytime at: http://$(hostname -I | awk '{print $1}'):8080
       pisugarClickType: $('pisugarClickType').value,
       fallbackAp: $('fallbackAp').checked,
       fallbackApSsid: $('fallbackApSsid').value.trim() || slugifySsid(label),
-      fallbackApPassword: $('fallbackApPassword').value,
-      configPassword: $('configPassword').value.trim() || autoConfigPassword || generateRandomPassword(),
     };
   }
 
@@ -2743,7 +3528,7 @@ echo "Change the gauge anytime at: http://$(hostname -I | awk '{print $1}'):8080
     }
     rows.push(
       ['Web config page', 'http://<device-ip>:8080'],
-      ['Web config password', opts.configPassword],
+      ['Web config access', 'PIN shown on display when visited'],
       ['WiFi networks', opts.wifiNetworks.length ? `${opts.wifiNetworks.length} added` : 'none added'],
       ['Refresh times', ':' + opts.minutes.map(m=>String(m).padStart(2,'0')).join(', :') || '—'],
       ['Active hours', opts.alwaysOn ? '24/7 (always on)' : `${opts.hourStart}:00–${opts.hourEnd}:00`],
@@ -2762,8 +3547,9 @@ echo "Change the gauge anytime at: http://$(hostname -I | awk '{print $1}'):8080
     const apNote = opts.fallbackAp
       ? ' and the fallback setup hotspot'
       : '';
-    const lastStepMulti = `The last 3 digits of the Pi's IP now show on the display itself, with a small WiFi icon underneath. Visit <code>http://&lt;that-ip&gt;:8080</code> from any browser on the same network to change a gauge or flip the display${opts.fallbackAp ? ', or to join a new WiFi network — the display itself shows reconnect instructions if the Pi ever loses WiFi entirely' : ''} — no SSH required. The browser will prompt for a username and password: username is <code>stage</code>, password is whatever you set (or was auto-generated) above.`;
-    const lastStepSingle = `The last 3 digits of the Pi's IP now show on the display itself, with a small WiFi icon underneath. Visit <code>http://&lt;that-ip&gt;:8080</code> from any browser on the same network to change the gauge or flip the display${opts.fallbackAp ? ', or to join a new WiFi network — the display itself shows reconnect instructions if the Pi ever loses WiFi entirely' : ''} — no SSH required. The browser will prompt for a username and password: username is <code>stage</code>, password is whatever you set (or was auto-generated) above.`;
+    const lastStepMulti = `The last 3 digits of the Pi's IP now show on the display itself, with a small WiFi icon underneath. Visit <code>http://&lt;that-ip&gt;:8080</code> from any browser on the same network to change a gauge or flip the display${opts.fallbackAp ? ', or to join a new WiFi network — the display itself shows reconnect instructions if the Pi ever loses WiFi entirely' : ''} — no SSH required. The page itself will ask for a PIN — visiting it makes the Pi show a fresh one on its own display, valid for a few minutes, and you'll stay logged in for about 30 minutes after that.`;
+    const lastStepSingle = `The last 3 digits of the Pi's IP now show on the display itself, with a small WiFi icon underneath. Visit <code>http://&lt;that-ip&gt;:8080</code> from any browser on the same network to change the gauge or flip the display${opts.fallbackAp ? ', or to join a new WiFi network — the display itself shows reconnect instructions if the Pi ever loses WiFi entirely' : ''} — no SSH required. The page itself will ask for a PIN — visiting it makes the Pi show a fresh one on its own display, valid for a few minutes, and you'll stay logged in for about 30 minutes after that.`;
+    const qrStep = `Optional: visit <code>http://&lt;hostname&gt;.local:8080/qr.png</code> once from a browser and save the image — it's a QR code for this exact page, using the Pi's real hostname. Print it or tuck it in with the device so opening the config page later is just a camera scan away, no typing an address at all.`;
     if (opts.displayHardware === '2.7'){
       stepsEl.innerHTML = `<ol>
         <li>With the Pi powered off, wire the e-paper HAT (and battery, if using one) to the 40-pin header — do this before the first boot if you haven't powered it on yet. Then power on and give it a minute to finish booting.</li>
@@ -2772,6 +3558,7 @@ echo "Change the gauge anytime at: http://$(hostname -I | awk '{print $1}'):8080
         <li>If this is the first time enabling SPI on this Pi, reboot once: <code>sudo reboot</code></li>
         <li>Confirm the test run shows a display update, then press each configured button and confirm the display switches gauges.</li>
         <li>${lastStepMulti}</li>
+        <li>${qrStep}</li>
       </ol>`;
     } else {
       stepsEl.innerHTML = `<ol>
@@ -2781,6 +3568,7 @@ echo "Change the gauge anytime at: http://$(hostname -I | awk '{print $1}'):8080
         <li>If this is the first time enabling SPI on this Pi, reboot once: <code>sudo reboot</code></li>
         <li>Confirm the test run in the script output shows a display update.</li>
         <li>${lastStepSingle}</li>
+        <li>${qrStep}</li>
       </ol>`;
     }
   }
@@ -2826,54 +3614,15 @@ echo "Change the gauge anytime at: http://$(hostname -I | awk '{print $1}'):8080
   hourStart.addEventListener('change', render);
   hourEnd.addEventListener('change', render);
 
-  // ---- Fallback hotspot: show its SSID/password fields only when enabled ----
+  // ---- Fallback hotspot: show its SSID field only when enabled ----
   const fallbackApEl = $('fallbackAp');
   const fallbackApFields = $('fallbackApFields');
-  const fallbackApWarning = $('fallbackApWarning');
   function syncFallbackAp(){
     fallbackApFields.style.display = fallbackApEl.checked ? '' : 'none';
-    const pw = $('fallbackApPassword').value;
-    fallbackApWarning.style.display = (fallbackApEl.checked && pw.length > 0 && pw.length < 8) ? '' : 'none';
   }
   fallbackApEl.addEventListener('change', () => { syncFallbackAp(); render(); });
   $('fallbackApSsid').addEventListener('input', render);
-  $('fallbackApPassword').addEventListener('input', () => { syncFallbackAp(); render(); });
   syncFallbackAp();
-
-  // ---- Web config page password: required (protects :8080 against
-  // outside/unauthenticated access). Auto-generated via the Web Crypto
-  // API if left blank, rather than falling back to any fixed default -
-  // a predictable fallback password baked into a public open-source
-  // tool would defeat the entire point. The generated value is cached
-  // in autoConfigPassword so it stays stable across re-renders (e.g.
-  // typing in an unrelated field) instead of changing on every
-  // keystroke, which would make it impossible to actually copy down. ----
-  let autoConfigPassword = null;
-  function generateRandomPassword(length = 12){
-    // Excludes visually-ambiguous characters (0/O, 1/l/I) since this is
-    // meant to be hand-copied and retyped once into a browser prompt.
-    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
-    const bytes = new Uint32Array(length);
-    crypto.getRandomValues(bytes);
-    return Array.from(bytes, b => chars[b % chars.length]).join('');
-  }
-  const configPasswordAutoHint = $('configPasswordAutoHint');
-  const configPasswordWarning = $('configPasswordWarning');
-  function syncConfigPassword(){
-    const typed = $('configPassword').value.trim();
-    if (!typed){
-      if (!autoConfigPassword) autoConfigPassword = generateRandomPassword();
-      configPasswordAutoHint.textContent = `Auto-generated: ${autoConfigPassword} — copy this down now.`;
-      configPasswordAutoHint.className = 'field-hint auto-generated';
-      configPasswordAutoHint.style.display = '';
-      configPasswordWarning.style.display = 'none';
-    } else {
-      configPasswordAutoHint.style.display = 'none';
-      configPasswordWarning.style.display = typed.length < 8 ? '' : 'none';
-    }
-  }
-  $('configPassword').addEventListener('input', () => { syncConfigPassword(); render(); });
-  syncConfigPassword();
 
   // ---- 24/7 mode: disables the active-hours window and, since there's no
   // "outside" window left, forces the WiFi-curfew toggle off too. The

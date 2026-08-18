@@ -141,7 +141,7 @@ Open the **<a href="https://inphenity.github.io/Stage-River-Monitor/" target="_b
 in a browser on your computer (not the Pi). It's laid out as a numbered
 sequence of sections — work through them top to bottom:
 
-- **00 — Network** — skip the WiFi-networks part if the Pi's already on WiFi (it is, from Step 1); add networks here for the Pi to join *in addition* to that one — a work WiFi, a mobile hotspot, a backup network. Also where the **fallback setup hotspot** lives (on by default) — if the Pi ever can't reach any known WiFi network, it broadcasts its own network so you can fix WiFi from a phone instead of re-flashing the SD card. Give it a name and an 8+ character password here; see [If WiFi ever stops working](#if-wifi-ever-stops-working) below for how it's used. This section also has the **web config page password** — required, since it's what keeps `:8080` from being reachable by anyone else on the network. Leave it blank and STAGE generates a random one for you (shown right there and in the spec list) — copy it down before you leave the page.
+- **00 — Network** — skip the WiFi-networks part if the Pi's already on WiFi (it is, from Step 1). Add networks here for the Pi to join *in addition* to that one — a work WiFi, a mobile hotspot, a backup network. This is also where the **fallback setup hotspot** lives (on by default): if the Pi ever can't reach any known WiFi network, it broadcasts its own network so you can fix WiFi from a phone instead of re-flashing the SD card. No password to set for it — the Pi generates its own PIN and shows it right on the display, changing periodically like a 2FA code. See [If WiFi ever stops working](#if-wifi-ever-stops-working) below for how it's used.
 - **01 — Display hardware** — pick your HAT (2.13" or 2.7"), and for the 2.7" confirm the board revision printed on the back (V1 vs V2) — picking the wrong one leaves the panel blank with no error.
 - **02 — Station / Gauges** — find your river's USGS site number at [waterdata.usgs.gov/nwis/rt](https://waterdata.usgs.gov/nwis/rt/) (it's the number in that gauge's URL), then choose discharge or gauge height — check your site's page for which one it actually publishes. Click **Test this site number** after entering it — the tool checks it against USGS live, right in your browser, so a typo or a site that doesn't report your chosen measurement gets caught here instead of after you're already SSH'd into a Pi.
 - **03 — Display behavior** — defaults are sensible; adjust as you like.
@@ -210,13 +210,33 @@ Then, from any browser on the same network:
 http://<the-pi's-ip>:8080
 ```
 
-The browser will prompt for a username and password — username is
-`stage`, password is whatever you set (or was auto-generated) in the
-setup tool's Network section. This is what keeps the page from being
-usable by anyone else who happens to be on the same network as the Pi.
-After 5 wrong attempts, that source stops being able to try again for
-a minute — so mistype it a few times and you'll just need to wait
-briefly before the next try.
+There's no username or password to remember here — just a PIN.
+Opening the page triggers it: the Pi shows a fresh PIN right on its
+own display the moment you try to load it, and the page itself asks
+for it (no browser login popup, just a single field on the page).
+Type it in and you're in for about 30 minutes, so you're not
+re-entering it on every single change — and if you're still within
+that window from a previous visit, it skips straight to the page,
+no PIN needed until that session runs out.
+
+The PIN is good for one login only — the instant it's used
+successfully, it's burned, and the display reverts to normal. A PIN
+you glimpsed and jotted down (or that's still sitting on the display
+from a minute ago) can't be reused once someone's already logged in
+with it. It also stays valid for a few minutes if unused, and expires
+on its own if nobody ever types it in. After 5 wrong attempts, that
+source stops being able to try again for a minute — so mistype it a
+few times (or let it expire mid-type) and you'll just need to reload
+the page for a fresh one and wait briefly before the next try.
+
+There's a **Log out** link at the bottom of the page for ending your
+session early — say, on a shared or gifted device, if you want to
+make sure the page needs a fresh PIN again right away rather than
+waiting out the full 30 minutes. Each of the config forms also has a
+**Log out after saving** checkbox, off by default, for when you're
+making one change and want to leave things locked behind you as part
+of the same click — leave it unchecked if you're making several
+changes in a row and don't want to type a new PIN each time.
 
 - **2.13" (single-gauge):** change the label, USGS site number,
   measurement, or the 180° flip, and the display refreshes immediately
@@ -231,9 +251,49 @@ briefly before the next try.
   new one without touching a keyboard. See the next section for when
   this actually matters.
 
+### Status, testing, and refreshing without SSH
+
+The page opens with a small **Status** box, live every time you load
+it:
+
+- **Current reading(s)** — pulled fresh from USGS right then, not
+  cached, so you can confirm a gauge is actually working without
+  walking over to look at the physical display. On the multi-gauge
+  variant, all configured buttons are checked at once rather than one
+  after another, so a slow connection doesn't multiply the wait.
+- **Uptime** and **WiFi signal strength**.
+- **Schedule status** — whether the cron job is present (single-gauge)
+  or the display service is active (multi-gauge).
+- A **Refresh now** button, separate from saving — forces an
+  immediate USGS fetch and redraw without needing to change any
+  settings first.
+
+Each USGS site number field also has its own **Test this site
+number** button, right next to the field — the same idea as the setup
+tool's version, but this one runs from the Pi itself rather than your
+browser, so it also confirms the Pi's own path to USGS, not just
+whether the number looks valid. Useful for catching a typo the moment
+you make it, rather than after checking back later and finding "No
+data yet."
+
+### A shortcut: scan instead of type
+
+Once things are running, visit `http://<hostname>.local:8080/qr.png`
+once from a browser and save the image — it's a QR code for the
+config page itself, using the Pi's real hostname. Print it or stick
+it in with the device, and future visits are just a camera scan away
+— no address to type or remember.
+
 This runs as its own `river-display-config` service, separate from the
 display itself — `sudo systemctl status river-display-config` if the
 page won't load.
+
+**Keep this on your home network.** It's plain HTTP, and the whole
+PIN-on-display model assumes whoever's typing the PIN can also see
+the physical device — that only holds if the page stays reachable
+just from your own WiFi. There's no reason to port-forward `:8080` or
+otherwise expose it to the internet; everything here already works
+from any device already on the same network as the Pi.
 
 ---
 
@@ -242,36 +302,38 @@ page won't load.
 This only applies if you left **"Fallback setup hotspot"** turned on
 in the setup tool's 00 — Network section (it's on by default).
 
-If the Pi ever can't reach any WiFi network it knows about — the
-password in Step 1 was wrong, the network got renamed, the router got
-replaced, or the Pi moved somewhere new — it automatically broadcasts
-its own network instead of just going dark. No monitor, keyboard, or
-re-flashing required to fix it. **The display itself tells you what to
-do** — it swaps the gauge reading for reconnect instructions (the
-hotspot's name, and the address to visit) the moment it detects the
-fallback hotspot is active, so you don't need to already know this
-feature exists to find your way back:
+If the Pi ever can't reach any WiFi network it knows about — a wrong
+password from Step 1, a renamed network, a new router, or the Pi
+moving somewhere new — it broadcasts its own network instead of just
+going dark, so you can fix it without a monitor, keyboard, or
+re-flashing the SD card. The display itself walks you through it: the
+moment the hotspot activates, it swaps the gauge reading for
+reconnect instructions (the hotspot's name and the address to visit),
+so you don't need to already know this feature exists to find your
+way back.
 
-1. On your phone or laptop, connect to the WiFi network named on the
-   display (defaults to `<display label>-setup`), using the password
-   you set for it in the setup tool. Expect a "no internet" warning on
-   this network — that's normal, it's local-only.
-2. Open the address shown on the display in a browser — normally
+1. Connect your phone or laptop to the WiFi network named on the
+   display (defaults to `<display label>-setup`), using the PIN shown
+   there as the password. It rotates periodically like a 2FA code
+   while nobody's connected, but holds steady once you are. Expect a
+   "no internet" warning on this network — that's normal, it's
+   local-only.
+2. A "sign in to network" prompt should pop up on its own within a
+   few seconds — tap it. If nothing appears, open a browser and visit
+   any address (even `example.com`) and you'll get redirected, or go
+   straight to the address shown on the display: normally
    `<hostname>.local:8080`, with `10.42.0.1:8080` underneath as a
-   fallback if `.local` doesn't resolve on your device. It'll prompt
-   for a username and password — username `stage`, password whatever
-   you set (or was auto-generated) for the web config page in the
-   setup tool. This isn't the same as the hotspot's own WiFi password
-   from step 1.
-3. Use the **"Join a WiFi network"** section to pick your (real)
-   network and enter its password, then submit.
-4. The Pi switches over and the hotspot disappears within a few
+   fallback if `.local` doesn't resolve on your device.
+3. You'll land on a login page asking for a PIN — a *second* one,
+   separate from the hotspot's own WiFi PIN in step 1. The config page
+   shows this one fresh on the display too, the moment you try to open
+   it, and it's good for a single login before it's burned.
+4. Use the **"Join a WiFi network"** section to pick your (real)
+   network, enter its password, and submit.
+5. The Pi switches over and the hotspot disappears within a few
    seconds. Reconnect your phone/laptop to your normal WiFi, then find
    the Pi there as usual (`ssh` by hostname, or the IP shown on the
    display).
-
-The hotspot only ever activates when normal WiFi is unreachable —
-otherwise it stays off and out of the way.
 
 ---
 
@@ -327,16 +389,46 @@ On the 2.7" HAT, if saving doesn't restart the display, the sudoers
 rule the installer sets up for that one restart command may not have
 applied — re-running the install script re-adds it.
 
-**Forgot the web config page password**
-It's baked into `config_server.py` in plain text (same as everything
-else the install script generates) — `grep AUTH_PASS
-~/river_display/config_server.py` over SSH will show it. There's no
-recovery flow beyond that; if you want a new one, edit that line
-directly and restart the service: `sudo systemctl restart
-river-display-config`.
+**Status box or "Test this site number" shows an HTTP 403 from USGS**
+This means USGS has temporarily blocked requests from your network's
+IP address for what it considers excessive use — not a problem with
+the site number itself, which is why it can show up for gauges you
+know are configured correctly. It usually clears on its own after a
+while. If it doesn't, USGS's own site has a contact form for
+requesting unblocking. Either way, this is a live-check quirk, not a
+sign the Pi itself is misconfigured — a display already running
+normally isn't affected by a block hitting the config page's checks.
+
+**PIN doesn't appear on the display when I visit the web config page**
+The display and the web page are two separate processes sharing one
+physical screen, so if a scheduled gauge refresh happens to be
+mid-draw at that exact moment, the PIN draw can get skipped rather
+than queued (this is logged, so `journalctl -u river-display-config`
+will show it if it happens). Just reload the page — it tries again,
+and usually lands in an idle moment within a second or two.
+
+**Typed the PIN in but it says the login failed**
+A couple of possibilities: it expired (PINs are only valid for a few
+minutes if unused), or it's already been used once — each PIN is
+good for exactly one login, then it's burned even if its time window
+hasn't run out. Either way, reload the page for a fresh one and try
+again. If you're on the fallback hotspot specifically, double check
+you're not mixing up its WiFi-join PIN (step 1) with the separate
+login PIN the config page itself shows (step 2) — they're not the
+same code.
+
+**Logged out sooner than expected / had to re-enter a PIN**
+Sessions last about 30 minutes, so this is expected if it's been a
+while. It also happens right away if you (or someone else on the
+device) used the **Log out** link, or checked **Log out after saving**
+on a form before submitting it — both end the session immediately
+rather than waiting out the full 30 minutes. A Pi reboot or a restart
+of the `river-display-config` service also clears everyone out, even
+mid-session — sessions only live in that service's memory, not on
+disk, so there's nothing to restore afterward. Just log in again.
 
 **"Too many attempts" / locked out of the web config page**
-After 5 wrong password attempts, that source is locked out for 60
+After 5 wrong PIN attempts, that source is locked out for 60
 seconds — this resets the moment a correct login goes through, so it's
 not a growing penalty, just a brief pause. If it's not you (say,
 something else on the network guessing at it), it clears on its own;
@@ -352,6 +444,14 @@ wired/direct connection, or once WiFi is working again) for a
 connection named `Hotspot`; if it's missing, re-run the install
 script. Also allow it a minute or so after WiFi fails — NetworkManager
 tries known networks first before falling back.
+
+**Connecting to the fallback hotspot doesn't pop up a sign-in page on its own**
+Automatic pop-ups depend on the phone/OS and aren't 100% consistent —
+some show it instantly, some take a few seconds, some need a
+notification pulled down manually. It should still work either way:
+open a browser and visit any address (even one you know doesn't
+exist, like `example.com`) and you'll get redirected, or go straight
+to the address shown on the display.
 
 **"Warning: There is another connection with the name..." while running the install script**
 Harmless, but worth knowing what it means: `nmcli` always creates a
