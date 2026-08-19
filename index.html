@@ -1072,7 +1072,10 @@ def render_fallback_screen(flip180):
         epd.init()
         epd.Clear(0xFF)
         epd.display(buf)
-        epd.displayPartBaseImage(buf)
+        try:
+            epd.displayPartBaseImage(buf)
+        except AttributeError:
+            pass  # not all EPD driver variants implement this
         epd.sleep()
     finally:
         _epd_unlock(fd)
@@ -1212,7 +1215,10 @@ ${trendCall}
             epd.init()
             epd.Clear(0xFF)
             epd.display(buf)
-            epd.displayPartBaseImage(buf)
+            try:
+                epd.displayPartBaseImage(buf)
+            except AttributeError:
+                pass  # not all EPD driver variants implement this
         else:
             epd.init()
             epd.displayPartial(buf)
@@ -1760,7 +1766,10 @@ ${trendCall}
         if full_refresh:
             epd.Clear(${opts.panel27Variant === 'v1' ? '0xFF' : ''})
             epd.display(buf)
-            epd.displayPartBaseImage(buf)  # establishes the baseline future partial refreshes diff against
+            try:
+                epd.displayPartBaseImage(buf)  # establishes the baseline future partial refreshes diff against, on driver variants that support it
+            except AttributeError:
+                pass  # not all EPD driver variants implement this
         else:
             epd.displayPartial(buf)
         epd.sleep()
@@ -1872,7 +1881,10 @@ def draw_config_pin_screen():
         epd.init()
         epd.Clear(${opts.panel27Variant === 'v1' ? '0xFF' : ''})
         epd.display(buf)
-        epd.displayPartBaseImage(buf)
+        try:
+            epd.displayPartBaseImage(buf)
+        except AttributeError:
+            pass  # not all EPD driver variants implement this
         epd.sleep()
     except Exception as e:
         print(f"draw_config_pin_screen: draw failed: {e}", file=sys.stderr)
@@ -2231,7 +2243,10 @@ def main():
         epd.init()
         epd.Clear(0xFF)
         epd.display(buf)
-        epd.displayPartBaseImage(buf)
+        try:
+            epd.displayPartBaseImage(buf)
+        except AttributeError:
+            pass  # not all EPD driver variants implement this
         epd.sleep()
     except Exception as e:
         print(f"show_config_pin: draw failed: {e}", file=sys.stderr)
@@ -2581,6 +2596,14 @@ __LOGIN_MSG__
 <button type="submit">Log in</button>
 </form>
 </body></html>"""
+
+LOGOUT_PAGE_HTML = """<!DOCTYPE html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>STAGE - logged out</title><style>${CONFIG_PAGE_CSS}</style></head><body>
+<h1>Logged out</h1>
+<p class="sub">The display's back to normal. You can close this page now.</p>
+<p class="hint"><a href="/">Log back in</a></p>
+</body></html>"""
 `;
 
   // Live USGS checks and basic device diagnostics for the config
@@ -2784,11 +2807,18 @@ async function testSiteLive(inputId, selectId, resultId, btnId){
 
     def _handle_logout(self):
         _destroy_session(self)
-        _revert_display()  # otherwise landing back on the login page immediately re-triggers a fresh PIN reveal
-        self.send_response(303)
-        self.send_header("Location", "/")
+        _revert_display()
+        # Renders a static page directly rather than redirecting to "/" -
+        # a redirect would land the browser right back on the login
+        # page, which always reveals a fresh PIN on its own, undoing
+        # the revert above the instant it happens. Logging back in is
+        # still one deliberate click away.
+        body = LOGOUT_PAGE_HTML.encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Set-Cookie", "session=; Path=/; Max-Age=0")
         self.end_headers()
+        self.wfile.write(body)
 `;
 
   // Intercepts this page's own form submissions to add the header
