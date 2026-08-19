@@ -3439,9 +3439,14 @@ chmod +x ~/river_display/river_display.py
 # river-display-config.service could be holding them too. Either would
 # make this manual test fail with a confusing (but harmless) "GPIO
 # busy" error rather than actually testing anything. Safe even on a
-# first run, when there's nothing to stop yet.
+# first run, when there's nothing to stop yet. The pause afterward
+# gives the OS a moment to actually release the GPIO pins - systemd
+# reports the process gone as soon as it's sent the stop signal, but
+# the underlying pin claim isn't freed until the process has fully
+# exited, which can lag a beat behind that.
 sudo systemctl stop river-display.service 2>/dev/null || true
 sudo systemctl stop river-display-config.service 2>/dev/null || true
+sleep 2
 echo "Running a quick test now - press Ctrl+C after a few seconds once the display updates."
 cd ~/river_display
 timeout 20 python3 river_display.py; echo "Test run finished (or timed out) - check the display."
@@ -3548,8 +3553,13 @@ chmod +x ~/river_display/river_display.py
 # and (on old installs, before this was fixed) holding the e-paper's
 # GPIO pins, which would make this test fail with a confusing (but
 # harmless) "GPIO busy" error rather than actually testing anything.
-# Safe even on a first run, when there's nothing to stop yet.
+# Safe even on a first run, when there's nothing to stop yet. The
+# pause afterward gives the OS a moment to actually release the GPIO
+# pins - systemd reports the process gone as soon as it's sent the
+# stop signal, but the underlying pin claim isn't freed until the
+# process has fully exited, which can lag a beat behind that.
 sudo systemctl stop river-display-config.service 2>/dev/null || true
+sleep 2
 echo "Running a test now..."
 cd ~/river_display
 python3 river_display.py && echo "Success! Check your display." || echo "Something failed - see error above."
