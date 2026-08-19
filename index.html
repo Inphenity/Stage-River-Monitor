@@ -2157,8 +2157,11 @@ SERVICEEOF
 
 sudo systemctl daemon-reload
 sudo systemctl enable pisugar-button-setup.service
-sudo systemctl restart pisugar-button-setup.service || python3 ~/river_display/pisugar_button_setup.py || true
-echo "PiSugar button bound to a ${opts.pisugarClickType} click. Check http://$(hostname -I | awk '{print $1}'):8421 to confirm."
+if sudo systemctl restart pisugar-button-setup.service || python3 ~/river_display/pisugar_button_setup.py; then
+  echo "PiSugar button bound to a ${opts.pisugarClickType} click. Check http://$(hostname -I | awk '{print $1}'):8421 to confirm."
+else
+  echo "PiSugar button binding didn't complete - install pisugar-server (see note above), then re-run: python3 ~/river_display/pisugar_button_setup.py"
+fi
 `;
   }
 
