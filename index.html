@@ -1760,6 +1760,7 @@ ${trendCall}
         if full_refresh:
             epd.Clear(${opts.panel27Variant === 'v1' ? '0xFF' : ''})
             epd.display(buf)
+            epd.displayPartBaseImage(buf)  # establishes the baseline future partial refreshes diff against
         else:
             epd.displayPartial(buf)
         epd.sleep()
@@ -2783,6 +2784,7 @@ async function testSiteLive(inputId, selectId, resultId, btnId){
 
     def _handle_logout(self):
         _destroy_session(self)
+        _revert_display()  # otherwise landing back on the login page immediately re-triggers a fresh PIN reveal
         self.send_response(303)
         self.send_header("Location", "/")
         self.send_header("Set-Cookie", "session=; Path=/; Max-Age=0")
