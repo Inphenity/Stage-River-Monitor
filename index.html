@@ -1585,6 +1585,7 @@ FORCE_REFRESH_FILE = os.path.expanduser("~/river_display/.force_refresh")
 # display itself - see config_pin_request_worker() below.
 CONFIG_PIN_FILE = os.path.expanduser("~/river_display/config_pin.txt")
 CONFIG_PIN_REQUEST_FILE = os.path.expanduser("~/river_display/.config_pin_request")
+CONFIG_PIN_VALID_SECONDS = 180  # kept in sync with config_server.py's own copy
 FONT_PATH_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 FONT_PATH_REG = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
 
@@ -1877,14 +1878,36 @@ def draw_config_pin_screen():
     finally:
         _epd_unlock(fd)
 
+def _config_pin_expired():
+    """True once the currently-shown config-access PIN is no longer
+    valid - either its time window ran out, or it was already used
+    (and deleted) by a successful login. Checked against the file
+    directly rather than trusting a timer, since a timer only lives as
+    long as the process that scheduled it."""
+    try:
+        _, ts = open(CONFIG_PIN_FILE).read().strip().split("|")
+        return time.time() - float(ts) >= CONFIG_PIN_VALID_SECONDS
+    except Exception:
+        return True  # missing/corrupt file - nothing valid to keep showing
+
 def config_pin_request_worker():
     """Watches for a signal from the web config server that someone's
     trying to log in, and draws the PIN on its behalf - only this
     daemon is allowed to hold the e-paper's GPIO pins long-term, so it
     does the actual drawing rather than letting the web process touch
     the hardware directly (see _trigger_pin_draw in config_server.py).
+
+    Also reverts the screen on its own once that PIN expires, checked
+    independently against CONFIG_PIN_FILE rather than relying solely
+    on the web server's own revert timer - that timer lives only in
+    the web server's memory, so if that process restarts while a PIN
+    is still showing (a redeploy, a crash, a reboot), the timer meant
+    to clean it up is lost with it, and the PIN screen would otherwise
+    stay stuck up indefinitely. This makes the revert happen even then.
+
     Runs regardless of whether the fallback hotspot is enabled, since
     config-page login always works this way now."""
+    showing_pin = False
     while True:
         if os.path.exists(CONFIG_PIN_REQUEST_FILE):
             try:
@@ -1892,6 +1915,10 @@ def config_pin_request_worker():
             except OSError:
                 pass
             draw_config_pin_screen()
+            showing_pin = True
+        elif showing_pin and _config_pin_expired():
+            render(current_button, full_refresh=True)
+            showing_pin = False
         time.sleep(2)
 
 def wait_for_network_and_refresh():
