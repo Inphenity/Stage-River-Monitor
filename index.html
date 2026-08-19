@@ -1869,7 +1869,7 @@ def draw_config_pin_screen():
             image = image.rotate(180)
         buf = epd.getbuffer(image)
         epd.init()
-        epd.Clear(0xFF)
+        epd.Clear(${opts.panel27Variant === 'v1' ? '0xFF' : ''})
         epd.display(buf)
         epd.displayPartBaseImage(buf)
         epd.sleep()
