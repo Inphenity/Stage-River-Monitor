@@ -2569,12 +2569,25 @@ def _fetch_usgs_reading(site_no, param_code, timeout=6):
             timeout=timeout,
         )
         resp.raise_for_status()
-        series = resp.json().get("value", {}).get("timeSeries", [])
-        if not series:
+        all_series = resp.json().get("value", {}).get("timeSeries", [])
+        if not all_series:
             return {"ok": False, "error": "No active site reporting that measurement."}
-        s = series[0]
-        site_name = (s.get("sourceInfo") or {}).get("siteName", "Unknown site")
-        latest = s["values"][0]["value"][0]
+        # A site can report more than one time series for a query like
+        # this (a secondary sensor, an auxiliary gauge) - match the
+        # exact variable code requested rather than assuming the first
+        # entry returned is the right one, the same way the display
+        # script's own fetch_current() does. Otherwise this can show a
+        # different reading than what's actually on the display.
+        matched = None
+        for s in all_series:
+            code = (s.get("variable") or {}).get("variableCode", [{}])[0].get("value")
+            if code == param_code:
+                matched = s
+                break
+        if matched is None:
+            matched = all_series[0]  # fall back rather than fail outright
+        site_name = (matched.get("sourceInfo") or {}).get("siteName", "Unknown site")
+        latest = matched["values"][0]["value"][0]
         return {"ok": True, "site_name": site_name, "value": latest["value"], "time": latest["dateTime"]}
     except Exception as e:
         return {"ok": False, "error": str(e)}
