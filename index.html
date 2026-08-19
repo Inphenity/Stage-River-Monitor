@@ -3431,13 +3431,15 @@ ${pyScript}PYEOF
 chmod +x ~/river_display/river_display.py
 
 # ---- 7. Test run (Ctrl+C to stop once you see it come up) ----
-# Stop any already-running instance first - if this script has been
+# Stop any already-running instances first - if this script has been
 # run before, river-display.service may already be holding the
-# e-paper's GPIO pins, which would make this manual test fail with a
-# confusing (but harmless) "GPIO busy" error rather than actually
-# testing anything. Safe even on a first run, when there's nothing to
-# stop yet.
+# e-paper's GPIO pins, and on an old install (before this was fixed)
+# river-display-config.service could be holding them too. Either would
+# make this manual test fail with a confusing (but harmless) "GPIO
+# busy" error rather than actually testing anything. Safe even on a
+# first run, when there's nothing to stop yet.
 sudo systemctl stop river-display.service 2>/dev/null || true
+sudo systemctl stop river-display-config.service 2>/dev/null || true
 echo "Running a quick test now - press Ctrl+C after a few seconds once the display updates."
 cd ~/river_display
 timeout 20 python3 river_display.py; echo "Test run finished (or timed out) - check the display."
@@ -3538,7 +3540,14 @@ cat > ~/river_display/river_display.py << 'PYEOF'
 ${pyScript}PYEOF
 chmod +x ~/river_display/river_display.py
 
-# ---- 7. Test run ----
+# ---- 7. Test run (Ctrl+C to stop once you see it come up) ----
+# Stop the config-page service first - if this script has been run
+# before, an older version of config_server.py may still be running
+# and (on old installs, before this was fixed) holding the e-paper's
+# GPIO pins, which would make this test fail with a confusing (but
+# harmless) "GPIO busy" error rather than actually testing anything.
+# Safe even on a first run, when there's nothing to stop yet.
+sudo systemctl stop river-display-config.service 2>/dev/null || true
 echo "Running a test now..."
 cd ~/river_display
 python3 river_display.py && echo "Success! Check your display." || echo "Something failed - see error above."
