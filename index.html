@@ -1990,9 +1990,15 @@ if __name__ == "__main__":
     const fullRefreshPy = isMulti
       ? refreshPy
       : `["/usr/bin/python3", os.path.expanduser("~/river_display/river_display.py"), "--full"]`;
+    // This becomes a Python EXPRESSION (not a quoted string) in the
+    // generated pisugar_button_setup.py - REFRESH_CMD = <this value>
+    // has no surrounding quotes in that template for exactly this
+    // reason. It needs to evaluate to a plain shell-command string at
+    // runtime, since that's what gets handed to pisugar-server to run
+    // when the button is actually pressed later.
     const refreshShell = isMulti
-      ? `touch " + os.path.expanduser("~/river_display/.force_refresh")`
-      : `/usr/bin/python3 " + os.path.expanduser("~/river_display/river_display.py")`;
+      ? `"touch " + os.path.expanduser("~/river_display/.force_refresh")`
+      : `"/usr/bin/python3 " + os.path.expanduser("~/river_display/river_display.py")`;
 
     if (opts.pisugarModel === 's'){
       const gpioScript = `#!/usr/bin/env python3
@@ -2097,7 +2103,7 @@ import sys
 
 SOCKET_PATH = "/tmp/pisugar-server.sock"
 CLICK_TYPE = "${opts.pisugarClickType}"
-REFRESH_CMD = "${refreshShell}"
+REFRESH_CMD = ${refreshShell}
 
 def send(sock, command):
     sock.sendall((command + "\\n").encode())
@@ -2141,6 +2147,7 @@ Requires=pisugar-server.service
 
 [Service]
 Type=oneshot
+User=$(whoami)
 ExecStart=/usr/bin/python3 /home/$(whoami)/river_display/pisugar_button_setup.py
 RemainAfterExit=yes
 
@@ -3432,6 +3439,8 @@ sudo /usr/bin/tvservice -o 2>/dev/null || true
 `;
     }
 
+    const piSugarBlock = buildPiSugarBlock(opts);
+
     if (opts.displayHardware === '2.7'){
       // ---- Multi-gauge, 2.7" HAT: systemd service instead of cron ----
       const pyScript = buildPythonScriptMulti(opts);
@@ -3539,7 +3548,7 @@ SERVICEEOF
 sudo systemctl daemon-reload
 sudo systemctl enable river-display-config.service
 sudo systemctl restart river-display-config.service
-
+${piSugarBlock}
 echo "Done. Buttons: ${opts.gauges.map(g => `Button ${g.button} = ${g.label}`).join(', ') || '(none configured)'}"
 echo "Check ~/river_display/log.txt or 'sudo systemctl status river-display' if a button doesn't switch gauges as expected."
 echo "Change gauges anytime at: http://$(hostname -I | awk '{print $1}'):8080"
@@ -3638,7 +3647,7 @@ SERVICEEOF
 sudo systemctl daemon-reload
 sudo systemctl enable river-display-config.service
 sudo systemctl restart river-display-config.service
-
+${piSugarBlock}
 echo "Done. Check ~/river_display/log.txt if the display doesn't update as expected."
 echo "Change the gauge anytime at: http://$(hostname -I | awk '{print $1}'):8080"
 `;
