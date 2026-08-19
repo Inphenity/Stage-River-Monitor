@@ -872,11 +872,14 @@ FONT_PATH_REG = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
 EPD_LOCK_FILE = os.path.expanduser("~/river_display/epd.lock")
 
 def _epd_lock(timeout=5):
-    """Serializes e-paper access with the separate web config server -
-    it can also draw to the display now (a login PIN reveal), and the
-    SPI bus can't take two writers at once. Returns an open, locked
-    file handle on success (pass to _epd_unlock when done), or None if
-    the display stayed busy past the timeout."""
+    """Serializes e-paper access with show_config_pin.py - a small
+    separate script the config server launches (and immediately exits
+    once it's drawn), rather than the config server touching the
+    display itself. This guards against that brief helper process
+    running at the exact same moment a scheduled cron run of this
+    script is also drawing. Returns an open, locked file handle on
+    success (pass to _epd_unlock when done), or None if the display
+    stayed busy past the timeout."""
     fd = open(EPD_LOCK_FILE, "w")
     deadline = time.time() + timeout
     while time.time() < deadline:
@@ -1347,11 +1350,13 @@ CONFIG_FILE = os.path.expanduser("~/river_display/config.json")
 EPD_LOCK_FILE = os.path.expanduser("~/river_display/epd.lock")
 
 def _epd_lock(timeout=5):
-    """Serializes e-paper access with the separate web config server -
-    it can also draw to the display now (a login PIN reveal), and the
-    SPI bus can't take two writers at once. Returns an open, locked
-    file handle on success (pass to _epd_unlock when done), or None if
-    the display stayed busy past the timeout."""
+    """Serializes e-paper access between this daemon's own threads -
+    a scheduled refresh, a button press, and now a config-PIN draw
+    request (see config_pin_request_worker below) can all want to draw
+    at nearly the same moment, and the SPI bus can't take two writers
+    at once. Returns an open, locked file handle on success (pass to
+    _epd_unlock when done), or None if the display stayed busy past
+    the timeout."""
     fd = open(EPD_LOCK_FILE, "w")
     deadline = time.time() + timeout
     while time.time() < deadline:
@@ -1574,6 +1579,12 @@ STATE_FILE = os.path.expanduser("~/.river_display_state")
 # a refresh of whichever gauge is currently displayed, without needing to
 # signal this running process directly - see force_refresh_worker() below.
 FORCE_REFRESH_FILE = os.path.expanduser("~/river_display/.force_refresh")
+# Written by config_server.py; read/watched here so this daemon (which
+# already owns the e-paper's GPIO pins) does the actual drawing for a
+# config-page login PIN, rather than the web server touching the
+# display itself - see config_pin_request_worker() below.
+CONFIG_PIN_FILE = os.path.expanduser("~/river_display/config_pin.txt")
+CONFIG_PIN_REQUEST_FILE = os.path.expanduser("~/river_display/.config_pin_request")
 FONT_PATH_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 FONT_PATH_REG = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
 
@@ -1829,6 +1840,60 @@ def force_refresh_worker():
             render(current_button, full_refresh=True)
         time.sleep(2)
 
+def draw_config_pin_screen():
+    """Draws the current config-page login PIN on the display, on
+    behalf of config_server.py (which signals this via
+    CONFIG_PIN_REQUEST_FILE rather than touching the e-paper itself -
+    see config_pin_request_worker below)."""
+    pin = "--------"
+    try:
+        pin = open(CONFIG_PIN_FILE).read().strip().split("|")[0]
+    except Exception:
+        pass
+    fd = _epd_lock()
+    if fd is None:
+        print("draw_config_pin_screen: display busy, skipping", file=sys.stderr)
+        return
+    try:
+        epd = epd_driver.EPD()
+        image = Image.new('1', (epd.height, epd.width), 255)
+        draw = ImageDraw.Draw(image)
+        font_title = ImageFont.truetype(FONT_PATH_BOLD, 16)
+        font_small = ImageFont.truetype(FONT_PATH_REG, 11)
+        draw.text((8, 10), "Config access requested", font=font_title, fill=0)
+        draw.text((8, 34), "Enter this PIN:", font=font_small, fill=0)
+        draw.text((8, 48), pin, font=font_title, fill=0)
+        draw.text((8, 76), "(expires in a few minutes)", font=font_small, fill=0)
+        if load_flip180():
+            image = image.rotate(180)
+        buf = epd.getbuffer(image)
+        epd.init()
+        epd.Clear(0xFF)
+        epd.display(buf)
+        epd.displayPartBaseImage(buf)
+        epd.sleep()
+    except Exception as e:
+        print(f"draw_config_pin_screen: draw failed: {e}", file=sys.stderr)
+    finally:
+        _epd_unlock(fd)
+
+def config_pin_request_worker():
+    """Watches for a signal from the web config server that someone's
+    trying to log in, and draws the PIN on its behalf - only this
+    daemon is allowed to hold the e-paper's GPIO pins long-term, so it
+    does the actual drawing rather than letting the web process touch
+    the hardware directly (see _trigger_pin_draw in config_server.py).
+    Runs regardless of whether the fallback hotspot is enabled, since
+    config-page login always works this way now."""
+    while True:
+        if os.path.exists(CONFIG_PIN_REQUEST_FILE):
+            try:
+                os.remove(CONFIG_PIN_REQUEST_FILE)
+            except OSError:
+                pass
+            draw_config_pin_screen()
+        time.sleep(2)
+
 def wait_for_network_and_refresh():
     """
     Forces a fetch + redraw at startup, retrying with backoff until at
@@ -1859,6 +1924,7 @@ def main():
     render(current_button, full_refresh=True)
     threading.Thread(target=scheduler_worker, daemon=True).start()
     threading.Thread(target=force_refresh_worker, daemon=True).start()
+    threading.Thread(target=config_pin_request_worker, daemon=True).start()
 ${apEnabled ? '    threading.Thread(target=hotspot_pin_worker, daemon=True).start()\n' : ''}    button_worker()  # runs forever on the main thread
 
 if __name__ == "__main__":
@@ -2054,6 +2120,100 @@ echo "PiSugar button bound to a ${opts.pisugarClickType} click. Check http://$(h
   // instead of SSHing in - runs on :8080, writes config.json which the
   // display script(s) above read from)
   // ==================================================================
+  // Standalone helper for the single-gauge (cron-based) variant only -
+  // draws the config page's login PIN, then exits, releasing the GPIO
+  // pins immediately. Launched fresh each time by config_server.py's
+  // _trigger_pin_draw() rather than that continuously-running server
+  // importing the e-paper driver itself. The multi-gauge (daemon)
+  // variant doesn't need this file - it already has a persistent
+  // process that legitimately owns the pins, so it just asks that
+  // process to draw instead (see config_pin_request_worker in
+  // buildPythonScriptMulti).
+  const SHOW_CONFIG_PIN_PY = `#!/usr/bin/env python3
+"""
+Tiny standalone helper - draws the web config page's login PIN on the
+e-paper, then exits immediately. Launched fresh each time by
+config_server.py rather than that server importing the display driver
+itself: Waveshare's driver claims the GPIO pins for as long as
+whatever imports it keeps running, and config_server.py runs
+continuously, so it must never hold those pins itself. This process's
+claim is released the moment it exits.
+"""
+import os
+import sys
+import json
+import time
+import fcntl
+from PIL import Image, ImageDraw, ImageFont
+from waveshare_epd import epd2in13_V4 as epd_driver
+
+FONT_PATH_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+FONT_PATH_REG = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+CONFIG_PIN_FILE = os.path.expanduser("~/river_display/config_pin.txt")
+CONFIG_FILE = os.path.expanduser("~/river_display/config.json")
+EPD_LOCK_FILE = os.path.expanduser("~/river_display/epd.lock")
+
+def load_flip180():
+    try:
+        with open(CONFIG_FILE) as f:
+            return bool(json.load(f).get("flip180", False))
+    except Exception:
+        return False
+
+def _epd_lock(timeout=5):
+    fd = open(EPD_LOCK_FILE, "w")
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return fd
+        except BlockingIOError:
+            time.sleep(0.1)
+    fd.close()
+    return None
+
+def _epd_unlock(fd):
+    if fd:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+        fd.close()
+
+def main():
+    pin = "--------"
+    try:
+        pin = open(CONFIG_PIN_FILE).read().strip().split("|")[0]
+    except Exception:
+        pass
+    fd = _epd_lock()
+    if fd is None:
+        print("show_config_pin: display busy, skipping", file=sys.stderr)
+        return
+    try:
+        epd = epd_driver.EPD()
+        image = Image.new('1', (epd.height, epd.width), 255)
+        draw = ImageDraw.Draw(image)
+        font_title = ImageFont.truetype(FONT_PATH_BOLD, 14)
+        font_small = ImageFont.truetype(FONT_PATH_REG, 10)
+        draw.text((6, 10), "Config access requested", font=font_title, fill=0)
+        draw.text((6, 32), "Enter this PIN:", font=font_small, fill=0)
+        draw.text((6, 46), pin, font=font_title, fill=0)
+        draw.text((6, 70), "(expires in a few minutes)", font=font_small, fill=0)
+        if load_flip180():
+            image = image.rotate(180)
+        buf = epd.getbuffer(image)
+        epd.init()
+        epd.Clear(0xFF)
+        epd.display(buf)
+        epd.displayPartBaseImage(buf)
+        epd.sleep()
+    except Exception as e:
+        print(f"show_config_pin: draw failed: {e}", file=sys.stderr)
+    finally:
+        _epd_unlock(fd)
+
+if __name__ == "__main__":
+    main()
+`;
+
   const CONFIG_PAGE_CSS = `body{font-family:Arial,Helvetica,sans-serif;max-width:480px;margin:40px auto;padding:0 16px;background:#0D2431;color:#E7F1F5}
 h1{font-size:19px;margin-bottom:2px}.sub{color:#7FA3B3;font-size:12.5px;margin-top:0}
 label{display:block;margin-top:14px;font-size:12.5px;color:#7FA3B3;text-transform:uppercase;letter-spacing:.04em}
@@ -2250,32 +2410,9 @@ _session_lock = threading.Lock()
 
 CONFIG_PIN_FILE = os.path.expanduser("~/river_display/config_pin.txt")
 CONFIG_PIN_VALID_SECONDS = 180  # how long a freshly-shown PIN stays valid
-EPD_LOCK_FILE = os.path.expanduser("~/river_display/epd.lock")
+CONFIG_PIN_REQUEST_FILE = os.path.expanduser("~/river_display/.config_pin_request")
 _pin_revert_timer = None
 _pin_generate_lock = threading.Lock()
-
-def _epd_lock(timeout=5):
-    """Serializes e-paper access between this web server and the
-    separate display process - both can now want to draw at once (a
-    PIN reveal here vs. a scheduled gauge refresh there), and the SPI
-    bus can't take two writers at the same time. Returns an open,
-    locked file handle on success (pass to _epd_unlock when done), or
-    None if the display stayed busy past the timeout."""
-    fd = open(EPD_LOCK_FILE, "w")
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        try:
-            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            return fd
-        except BlockingIOError:
-            time.sleep(0.1)
-    fd.close()
-    return None
-
-def _epd_unlock(fd):
-    if fd:
-        fcntl.flock(fd, fcntl.LOCK_UN)
-        fd.close()
 
 def _current_config_pin():
     """The PIN currently valid for logging in, if one's been shown
@@ -2290,13 +2427,21 @@ def _current_config_pin():
     return None
 
 def _reveal_config_pin():
-    """Generates a fresh PIN if none is currently valid, draws it on
-    the e-paper in place of whatever it's normally showing, and
-    schedules a revert once it expires - like a 2FA code that only
+    """Generates a fresh PIN if none is currently valid, and asks
+    whichever process actually owns the e-paper's GPIO pins to draw it
+    (see _trigger_pin_draw below) - this process never touches the
+    display hardware directly. Waveshare's driver claims those pins
+    for its entire process lifetime the moment it's imported, not just
+    while actively drawing, so this server importing it too would mean
+    two long-running processes permanently fighting over the same
+    pins - exactly the kind of conflict that produces a "GPIO busy"
+    crash loop on the daemon-based (2.7") display.
+
+    Schedules a revert once the PIN expires, like a 2FA code that only
     appears when someone actually tries the door. Debounced: while a
     PIN is still valid, repeat calls (a browser's normal flurry of
-    preflight/favicon requests) just reuse it rather than flashing the
-    screen or resetting the countdown each time.
+    preflight/favicon requests) just reuse it rather than re-signaling
+    a draw or resetting the countdown each time.
 
     The whole check-generate-write sequence is wrapped in a lock: this
     server now listens on two ports at once (80 and 8080), each on its
@@ -2315,32 +2460,7 @@ def _reveal_config_pin():
         with open(CONFIG_PIN_FILE, "w") as f:
             f.write(f"{pin}|{time.time()}")
 
-        fd = _epd_lock()
-        if fd is None:
-            print("_reveal_config_pin: display busy, PIN not shown on screen", file=sys.stderr)
-        else:
-            try:
-                epd = epd_driver.EPD()
-                image = Image.new('1', (epd.height, epd.width), 255)
-                draw = ImageDraw.Draw(image)
-                font_title = ImageFont.truetype(FONT_PATH_BOLD, 16)
-                font_small = ImageFont.truetype(FONT_PATH_REG, 11)
-                draw.text((8, 10), "Config access requested", font=font_title, fill=0)
-                draw.text((8, 34), "Enter this PIN:", font=font_small, fill=0)
-                draw.text((8, 48), pin, font=font_title, fill=0)
-                draw.text((8, 76), "(expires in a few minutes)", font=font_small, fill=0)
-                if _get_flip180():
-                    image = image.rotate(180)
-                buf = epd.getbuffer(image)
-                epd.init()
-                epd.Clear(0xFF)
-                epd.display(buf)
-                epd.displayPartBaseImage(buf)
-                epd.sleep()
-            except Exception as e:
-                print(f"_reveal_config_pin: draw failed: {e}", file=sys.stderr)
-            finally:
-                _epd_unlock(fd)
+        _trigger_pin_draw()
 
         if _pin_revert_timer:
             _pin_revert_timer.cancel()
@@ -2427,7 +2547,7 @@ LOGIN_PAGE_HTML = """<!DOCTYPE html><html><head><meta charset="utf-8">
 <title>STAGE login</title><style>${CONFIG_PAGE_CSS}</style></head><body>
 <h1>STAGE</h1>
 <p class="sub">Enter the PIN shown on the device's display.</p>
-{msg}
+__LOGIN_MSG__
 <form method="POST" action="/login">
 <label>PIN<input type="text" name="pin" inputmode="numeric" pattern="[0-9]*" autocomplete="off" autofocus maxlength="8"></label>
 <button type="submit">Log in</button>
@@ -2577,7 +2697,7 @@ async function testSiteLive(inputId, selectId, resultId, btnId){
     def _render_login(self, error=False):
         _reveal_config_pin()
         msg = '<p class="msg" style="color:#E8896B">Wrong PIN - check the display for the current one.</p>' if error else ""
-        body = LOGIN_PAGE_HTML.format(msg=msg)
+        body = LOGIN_PAGE_HTML.replace("__LOGIN_MSG__", msg)
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.end_headers()
@@ -2679,19 +2799,13 @@ import secrets
 import http.cookies
 import time
 import sys
-import fcntl
 import threading
 import requests
 from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import parse_qs
-from PIL import Image, ImageDraw, ImageFont
-from waveshare_epd import epd2in13_V4 as epd_driver
 import qrcode
 import io
-
-FONT_PATH_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
-FONT_PATH_REG = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
 
 CONFIG_FILE = os.path.expanduser("~/river_display/config.json")
 DEFAULTS = {"site_no": "${opts.siteNo}", "measurement": "${opts.measurement}",
@@ -2707,14 +2821,18 @@ def _revert_display():
     except Exception as e:
         print(f"_revert_display: {e}", file=sys.stderr)
 
-def _get_flip180():
-    """So the config-access PIN screen respects upside-down mounting
-    the same way every other screen this device draws does - otherwise
-    it'd be the one unreadable exception."""
+def _trigger_pin_draw():
+    """Draws the config-access PIN screen via a short-lived helper
+    process instead of this server touching the e-paper itself.
+    Waveshare's driver claims the GPIO pins for as long as whatever
+    imports it keeps running - this server runs continuously, so it
+    must never import that driver directly, or it'd permanently fight
+    river_display.py (or a stray previous run of it) for the same
+    pins. The helper process releases them the moment it exits."""
     try:
-        return load_config()["flip180"]
-    except Exception:
-        return False
+        subprocess.Popen(["/usr/bin/python3", os.path.expanduser("~/river_display/show_config_pin.py")])
+    except Exception as e:
+        print(f"_trigger_pin_draw: {e}", file=sys.stderr)
 
 def load_config():
     cfg = dict(DEFAULTS)
@@ -2902,19 +3020,14 @@ import secrets
 import http.cookies
 import time
 import sys
-import fcntl
 import threading
 import requests
 from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import parse_qs
-from PIL import Image, ImageDraw, ImageFont
-from waveshare_epd import ${epdModule} as epd_driver
 import qrcode
 import io
 
-FONT_PATH_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
-FONT_PATH_REG = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
 FORCE_REFRESH_FILE = os.path.expanduser("~/river_display/.force_refresh")
 
 CONFIG_FILE = os.path.expanduser("~/river_display/config.json")
@@ -2935,14 +3048,19 @@ def _revert_display():
     except Exception as e:
         print(f"_revert_display: {e}", file=sys.stderr)
 
-def _get_flip180():
-    """So the config-access PIN screen respects upside-down mounting
-    the same way every other screen this device draws does - otherwise
-    it'd be the one unreadable exception."""
+def _trigger_pin_draw():
+    """Asks the display daemon to draw the config-access PIN screen,
+    rather than this server touching the e-paper itself. Waveshare's
+    driver claims the GPIO pins for its whole process lifetime the
+    moment it's imported, and the daemon already holds them
+    permanently - a second long-running process importing that same
+    driver would mean two processes permanently fighting over the same
+    pins. The daemon watches for this file the same way it already
+    watches FORCE_REFRESH_FILE."""
     try:
-        return load_full_config()["flip180"]
-    except Exception:
-        return False
+        open(CONFIG_PIN_REQUEST_FILE, "w").close()
+    except Exception as e:
+        print(f"_trigger_pin_draw: {e}", file=sys.stderr)
 
 def load_full_config():
     """Everything in config.json as one dict, so saving one part (gauges
@@ -3397,6 +3515,15 @@ python3 river_display.py && echo "Success! Check your display." || echo "Somethi
 cat > ~/river_display/config_server.py << 'PYEOF'
 ${buildConfigServerScript(opts)}PYEOF
 chmod +x ~/river_display/config_server.py
+
+# ---- 9b. Tiny standalone helper that draws the config page's login
+# PIN, then exits immediately - launched fresh by config_server.py each
+# time rather than that continuously-running server importing the
+# e-paper driver itself (which claims the GPIO pins for as long as the
+# importing process stays alive). ----
+cat > ~/river_display/show_config_pin.py << 'PYEOF'
+${SHOW_CONFIG_PIN_PY}PYEOF
+chmod +x ~/river_display/show_config_pin.py
 
 sudo tee /etc/systemd/system/river-display-config.service > /dev/null << SERVICEEOF
 [Unit]
