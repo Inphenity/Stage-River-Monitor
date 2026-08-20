@@ -1871,10 +1871,15 @@ def draw_config_pin_screen():
         draw = ImageDraw.Draw(image)
         font_title = ImageFont.truetype(FONT_PATH_BOLD, 16)
         font_small = ImageFont.truetype(FONT_PATH_REG, 11)
+        hostname = socket.gethostname()
         draw.text((8, 10), "Config access requested", font=font_title, fill=0)
-        draw.text((8, 34), "Enter this PIN:", font=font_small, fill=0)
-        draw.text((8, 48), pin, font=font_title, fill=0)
-        draw.text((8, 76), "(expires in a few minutes)", font=font_small, fill=0)
+        draw.text((8, 34), "Visit:", font=font_small, fill=0)
+        url_display = truncate_to_width(draw, f"{hostname}.local:8080", font_title, epd.height - 16)
+        draw.text((8, 46), url_display, font=font_title, fill=0)
+        draw.text((8, 68), "(or 10.42.0.1:8080)", font=font_small, fill=0)
+        draw.text((8, 90), "Enter this PIN:", font=font_small, fill=0)
+        draw.text((8, 104), pin, font=font_title, fill=0)
+        draw.text((8, 134), "(expires in a few minutes)", font=font_small, fill=0)
         if load_flip180():
             image = image.rotate(180)
         buf = epd.getbuffer(image)
@@ -2215,6 +2220,7 @@ import sys
 import json
 import time
 import fcntl
+import socket
 from PIL import Image, ImageDraw, ImageFont
 from waveshare_epd import epd2in13_V4 as epd_driver
 
@@ -2248,6 +2254,17 @@ def _epd_unlock(fd):
         fcntl.flock(fd, fcntl.LOCK_UN)
         fd.close()
 
+def truncate_to_width(draw, text, font, max_width):
+    """Shortens text with a trailing ellipsis if it's wider than
+    max_width, rather than letting it run off the edge of the
+    display."""
+    if draw.textlength(text, font=font) <= max_width:
+        return text
+    trimmed = text
+    while trimmed and draw.textlength(trimmed + "…", font=font) > max_width:
+        trimmed = trimmed[:-1]
+    return (trimmed + "…") if trimmed else "…"
+
 def main():
     pin = "--------"
     try:
@@ -2264,10 +2281,15 @@ def main():
         draw = ImageDraw.Draw(image)
         font_title = ImageFont.truetype(FONT_PATH_BOLD, 14)
         font_small = ImageFont.truetype(FONT_PATH_REG, 10)
-        draw.text((6, 10), "Config access requested", font=font_title, fill=0)
-        draw.text((6, 32), "Enter this PIN:", font=font_small, fill=0)
-        draw.text((6, 46), pin, font=font_title, fill=0)
-        draw.text((6, 70), "(expires in a few minutes)", font=font_small, fill=0)
+        hostname = socket.gethostname()
+        draw.text((6, 2), "Config access requested", font=font_title, fill=0)
+        draw.text((6, 22), "Visit:", font=font_small, fill=0)
+        url_display = truncate_to_width(draw, f"{hostname}.local:8080", font_title, epd.height - 12)
+        draw.text((6, 34), url_display, font=font_title, fill=0)
+        draw.text((6, 54), "(or 10.42.0.1:8080)", font=font_small, fill=0)
+        draw.text((6, 70), "Enter this PIN:", font=font_small, fill=0)
+        draw.text((6, 82), pin, font=font_title, fill=0)
+        draw.text((6, 106), "(expires soon)", font=font_small, fill=0)
         if load_flip180():
             image = image.rotate(180)
         buf = epd.getbuffer(image)
