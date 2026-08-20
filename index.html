@@ -2100,6 +2100,7 @@ Safe to re-run - it just re-applies the same two settings each time.
 import os
 import socket
 import sys
+import time
 
 SOCKET_PATH = "/tmp/pisugar-server.sock"
 CLICK_TYPE = "${opts.pisugarClickType}"
@@ -2110,14 +2111,32 @@ def send(sock, command):
     reply = sock.recv(4096).decode().strip()
     print(f"> {command}\\n< {reply}")
 
+def connect(timeout=20):
+    """pisugar-server's own startup does slow RTC/I2C probing before its
+    socket exists - systemd's After=/Requires= only guarantees the
+    service has been launched, not that it's actually finished getting
+    ready, so retrying for a bit here matters especially right after
+    boot. Reused as-is for a manual re-run too, where it just succeeds
+    on the first try."""
+    deadline = time.time() + timeout
+    last_error = None
+    while time.time() < deadline:
+        try:
+            sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            sock.connect(SOCKET_PATH)
+            return sock
+        except (FileNotFoundError, ConnectionRefusedError) as e:
+            last_error = e
+            time.sleep(1)
+    raise last_error
+
 def main():
     try:
-        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
-            sock.connect(SOCKET_PATH)
+        with connect() as sock:
             send(sock, f"set_button_shell {CLICK_TYPE} {REFRESH_CMD}")
             send(sock, f"set_button_enable {CLICK_TYPE} 1")
     except FileNotFoundError:
-        print(f"Could not find {SOCKET_PATH} -- is pisugar-server installed and running?", file=sys.stderr)
+        print(f"Could not find {SOCKET_PATH} after waiting -- is pisugar-server installed?", file=sys.stderr)
         sys.exit(1)
     except ConnectionRefusedError:
         print("pisugar-server socket refused the connection -- is the service running?", file=sys.stderr)
@@ -2150,6 +2169,8 @@ Type=oneshot
 User=$(whoami)
 ExecStart=/usr/bin/python3 /home/$(whoami)/river_display/pisugar_button_setup.py
 RemainAfterExit=yes
+Restart=on-failure
+RestartSec=5
 
 [Install]
 WantedBy=multi-user.target
