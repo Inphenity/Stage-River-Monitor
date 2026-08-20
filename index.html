@@ -680,7 +680,7 @@ footer{ text-align:center; color: var(--ink-muted); font-family: var(--mono); fo
       </div>
       <div class="field">
         <div class="field-label">Display label</div>
-        <input type="text" id="gauge${b}Label" placeholder="e.g. Millrace" maxlength="18">
+        <input type="text" id="gauge${b}Label" placeholder="e.g. River Monitor" maxlength="18">
       </div>
       <div class="field">
         <div class="field-label">USGS site number</div>
@@ -2077,6 +2077,7 @@ After=multi-user.target
 [Service]
 Type=simple
 User=$(whoami)
+WorkingDirectory=/home/$(whoami)/river_display
 ExecStart=/usr/bin/python3 /home/$(whoami)/river_display/pisugar_button.py
 Restart=on-failure
 RestartSec=5
@@ -2486,15 +2487,16 @@ fetch("/wifi-scan").then(function(r){ return r.json(); }).then(function(names){
   // Auth + CSRF protection, shared by both single and multi config
   // servers - always included (not conditional), since the config page
   // exists unconditionally and this is the baseline hardening for it:
-  //   - HTTP Basic Auth stops anyone who doesn't know the password
-  //     from reaching the page at all - the main defense if this ever
-  //     ends up reachable from outside the local network.
+  //   - The PIN + session-cookie login stops anyone who doesn't have
+  //     physical access to the display (where the PIN is shown) from
+  //     reaching the page at all - the main defense if this ever ends
+  //     up reachable from outside the local network.
   //   - The custom-header check stops "blind" CSRF: a malicious page
   //     elsewhere silently auto-submitting a form here. A plain HTML
   //     <form> cannot set a custom header - only this page's own
-  //     JavaScript can - and browsers resend cached Basic Auth
-  //     credentials on EVERY request to an origin regardless of what
-  //     triggered it, so the auth check alone would not stop this.
+  //     JavaScript can - and browsers resend cached session cookies
+  //     on EVERY request to an origin regardless of what triggered it,
+  //     so the login check alone would not stop this.
   const AUTH_PY_FUNCS = `
 FAILED_LOGIN_MAX = 5
 FAILED_LOGIN_LOCKOUT_SECONDS = 60
