@@ -4,6 +4,20 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>STAGE — River Gauge E-Paper Setup Tool</title>
+<meta name="description" content="Generate an install script for a Raspberry Pi + e-paper display that shows live USGS river gauge data. No signup, no API key.">
+
+<!-- Favicon: inline SVG, no external asset needed -->
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230D2431'/%3E%3Cpath d='M5 21 Q10 9 16 16 T27 9' stroke='%23E8C468' stroke-width='2.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3Ccircle cx='27' cy='9' r='2.2' fill='%23E8C468'/%3E%3C/svg%3E">
+
+<!-- Open Graph / Twitter Card: shown when this page's link is shared -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="STAGE — River Gauge E-Paper Setup Tool">
+<meta property="og:description" content="Generate an install script for a Raspberry Pi + e-paper display that shows live USGS river gauge data. No signup, no API key.">
+<meta property="og:url" content="https://inphenity.github.io/Stage-River-Monitor/">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="STAGE — River Gauge E-Paper Setup Tool">
+<meta name="twitter:description" content="Generate an install script for a Raspberry Pi + e-paper display that shows live USGS river gauge data. No signup, no API key.">
+
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
@@ -1037,6 +1051,47 @@ def _rotate_hotspot_pin_if_due():
         return new_pin
     return current_pin or "generating…"
 
+CONFIG_PIN_FILE = os.path.expanduser("~/river_display/config_pin.txt")
+CONFIG_PIN_MIN_ROTATE_SECONDS = 600  # kept in sync with config_server.py's
+# own CONFIG_PIN_VALID_SECONDS - shown proactively here (rather than only
+# once someone actually visits the config page) so both PINs needed for
+# recovery are on screen together, in one trip, instead of requiring a
+# second visit to the display after joining the hotspot. config_server.py
+# just reads whatever's current in this same file - it doesn't care who
+# wrote it, so this needs no changes on that side.
+
+def _rotate_config_pin_if_due():
+    """Same rotate-if-due, hold-steady-while-connected pattern as
+    _rotate_hotspot_pin_if_due() above, applied to the separate
+    config-login PIN instead of the WiFi one. Unlike that function,
+    "holding steady" here specifically means: if it's due to rotate
+    but someone's connected, keep the same PIN VALUE while still
+    refreshing the file's timestamp - otherwise the PIN would silently
+    expire against config_server.py's own independent clock (which has
+    no idea whether anyone's connected) while it's still the exact PIN
+    on screen. Only touches the file when actually due - an untouched,
+    not-yet-due PIN is left alone so it still ages and rotates on
+    schedule the normal way once nobody's connected."""
+    try:
+        age = time.time() - os.stat(CONFIG_PIN_FILE).st_mtime
+        current_pin = open(CONFIG_PIN_FILE).read().strip().split("|")[0]
+    except (FileNotFoundError, OSError, ValueError):
+        age, current_pin = None, None
+
+    due = age is None or age >= CONFIG_PIN_MIN_ROTATE_SECONDS
+    if due:
+        if not _hotspot_client_connected():
+            import random
+            new_pin = "".join(str(random.randint(0, 9)) for _ in range(8))
+            with open(CONFIG_PIN_FILE, "w") as f:
+                f.write(f"{new_pin}|{time.time()}")
+            return new_pin
+        if current_pin is not None:
+            with open(CONFIG_PIN_FILE, "w") as f:
+                f.write(f"{current_pin}|{time.time()}")
+            return current_pin
+    return current_pin or "generating…"
+
 def render_fallback_screen(flip180):
     """Replaces the normal gauge view with WiFi recovery instructions
     while the fallback hotspot is active - discoverable without already
@@ -1051,21 +1106,24 @@ def render_fallback_screen(flip180):
         epd = epd_driver.EPD()
         image = Image.new('1', (epd.height, epd.width), 255)
         draw = ImageDraw.Draw(image)
-        font_title = ImageFont.truetype(FONT_PATH_BOLD, 14)
-        font_small = ImageFont.truetype(FONT_PATH_REG, 10)
+        font_title = ImageFont.truetype(FONT_PATH_BOLD, 13)
+        font_small = ImageFont.truetype(FONT_PATH_REG, 9)
         hostname = socket.gethostname()
-        pin = _rotate_hotspot_pin_if_due()
-        draw.text((6, 2), "WiFi lost — reconnect:", font=font_title, fill=0)
-        draw.text((6, 20), "1. Join:", font=font_small, fill=0)
+        wifi_pin = _rotate_hotspot_pin_if_due()
+        login_pin = _rotate_config_pin_if_due()
+        draw.text((4, 1), "WiFi lost — reconnect:", font=font_title, fill=0)
+        draw.text((4, 20), "1. Join:", font=font_small, fill=0)
         ssid_display = truncate_to_width(draw, FALLBACK_AP_SSID, font_title, epd.height - 54)
-        draw.text((54, 18), ssid_display, font=font_title, fill=0)
-        draw.text((6, 40), "2. PIN:", font=font_small, fill=0)
-        draw.text((54, 38), pin, font=font_title, fill=0)
-        draw.text((6, 60), "3. Visit:", font=font_small, fill=0)
+        draw.text((58, 18), ssid_display, font=font_title, fill=0)
+        draw.text((4, 38), "WiFi PIN:", font=font_small, fill=0)
+        draw.text((58, 36), wifi_pin, font=font_title, fill=0)
+        draw.text((4, 56), "2. Visit:", font=font_small, fill=0)
         url_display = truncate_to_width(draw, f"{hostname}.local:8080", font_title, epd.height - 54)
-        draw.text((54, 58), url_display, font=font_title, fill=0)
-        draw.text((6, 80), "(or 10.42.0.1:8080)", font=font_small, fill=0)
-        draw.text((6, 100), "PIN refreshes while idle", font=font_small, fill=0)
+        draw.text((58, 54), url_display, font=font_title, fill=0)
+        draw.text((4, 71), "(or 10.42.0.1:8080)", font=font_small, fill=0)
+        draw.text((4, 89), "Login PIN:", font=font_small, fill=0)
+        draw.text((58, 87), login_pin, font=font_title, fill=0)
+        draw.text((4, 107), "Both PINs refresh while idle", font=font_small, fill=0)
         if flip180:
             image = image.rotate(180)
         buf = epd.getbuffer(image)
@@ -1554,6 +1612,45 @@ def hotspot_pin_worker():
         else:
             time.sleep(15)
 
+def _rotate_config_pin_if_due():
+    """Same rotate-if-due, hold-steady-while-connected pattern as
+    _rotate_hotspot_pin_if_due() above, applied to the separate
+    config-login PIN instead of the WiFi one. Shown proactively here
+    (rather than only once someone actually visits the config page) so
+    both PINs needed for recovery are on screen together, in one trip,
+    instead of requiring a second visit to the display after joining
+    the hotspot. Shares CONFIG_PIN_FILE and CONFIG_PIN_VALID_SECONDS
+    with config_pin_request_worker below - config_server.py just reads
+    whatever's current in that file, so this needs no changes there.
+    Unlike the hotspot-PIN function above, "holding steady" here
+    specifically means: if it's due to rotate but someone's connected,
+    keep the same PIN VALUE while still refreshing the file's
+    timestamp - otherwise the PIN would silently expire against
+    config_server.py's own independent clock (which has no idea
+    whether anyone's connected) while it's still the exact PIN on
+    screen. Only touches the file when actually due - an untouched,
+    not-yet-due PIN is left alone so it still ages and rotates on
+    schedule the normal way once nobody's connected."""
+    try:
+        age = time.time() - os.stat(CONFIG_PIN_FILE).st_mtime
+        current_pin = open(CONFIG_PIN_FILE).read().strip().split("|")[0]
+    except (FileNotFoundError, OSError, ValueError):
+        age, current_pin = None, None
+
+    due = age is None or age >= CONFIG_PIN_VALID_SECONDS
+    if due:
+        if not _hotspot_client_connected():
+            import random
+            new_pin = "".join(str(random.randint(0, 9)) for _ in range(8))
+            with open(CONFIG_PIN_FILE, "w") as f:
+                f.write(f"{new_pin}|{time.time()}")
+            return new_pin
+        if current_pin is not None:
+            with open(CONFIG_PIN_FILE, "w") as f:
+                f.write(f"{current_pin}|{time.time()}")
+            return current_pin
+    return current_pin or "generating…"
+
 def draw_fallback_hotspot_screen(draw, w, h, font_title, font_small):
     """Replaces the normal gauge view with WiFi recovery instructions
     while the fallback hotspot is active - discoverable without already
@@ -1561,17 +1658,20 @@ def draw_fallback_hotspot_screen(draw, w, h, font_title, font_small):
     hostname, read fresh at render time - STAGE has no way to know it
     in advance, since it's set independently in Raspberry Pi Imager."""
     hostname = socket.gethostname()
-    pin = _rotate_hotspot_pin_if_due()
-    draw.text((8, 6), "WiFi lost — reconnect:", font=font_title, fill=0)
-    draw.text((8, 32), "1. Join WiFi:", font=font_small, fill=0)
+    wifi_pin = _rotate_hotspot_pin_if_due()
+    login_pin = _rotate_config_pin_if_due()
+    draw.text((8, 4), "WiFi lost — reconnect:", font=font_title, fill=0)
+    draw.text((8, 24), "1. Join WiFi:", font=font_small, fill=0)
     ssid_display = truncate_to_width(draw, FALLBACK_AP_SSID, font_title, w - 16)
-    draw.text((8, 46), ssid_display, font=font_title, fill=0)
-    draw.text((8, 78), "2. Enter PIN:", font=font_small, fill=0)
-    draw.text((8, 92), pin, font=font_title, fill=0)
-    draw.text((8, 124), "3. Then visit:", font=font_small, fill=0)
+    draw.text((8, 36), ssid_display, font=font_title, fill=0)
+    draw.text((8, 56), "WiFi PIN:", font=font_small, fill=0)
+    draw.text((8, 68), wifi_pin, font=font_title, fill=0)
+    draw.text((8, 90), "2. Then visit:", font=font_small, fill=0)
     url_display = truncate_to_width(draw, f"{hostname}.local:8080", font_title, w - 16)
-    draw.text((8, 138), url_display, font=font_title, fill=0)
-    draw.text((8, 162), "PIN refreshes while idle", font=font_small, fill=0)
+    draw.text((8, 102), url_display, font=font_title, fill=0)
+    draw.text((8, 124), "Login PIN:", font=font_small, fill=0)
+    draw.text((8, 136), login_pin, font=font_title, fill=0)
+    draw.text((8, 158), "Both PINs refresh while idle", font=font_small, fill=0)
 ` : ''}
 HISTORY_PERIOD = "P2D"
 REFRESH_MINUTES = set(${JSON.stringify(opts.minutes)})
@@ -1591,7 +1691,11 @@ FORCE_REFRESH_FILE = os.path.expanduser("~/river_display/.force_refresh")
 # display itself - see config_pin_request_worker() below.
 CONFIG_PIN_FILE = os.path.expanduser("~/river_display/config_pin.txt")
 CONFIG_PIN_REQUEST_FILE = os.path.expanduser("~/river_display/.config_pin_request")
-CONFIG_PIN_VALID_SECONDS = 180  # kept in sync with config_server.py's own copy
+CONFIG_PIN_VALID_SECONDS = 600  # kept in sync with config_server.py's own
+# copy - also doubles as the rotate-if-due interval for the login PIN
+# shown proactively on the fallback-hotspot screen (see
+# _rotate_config_pin_if_due above), so a PIN shown there stays valid for
+# exactly as long as it's actually on screen
 FONT_PATH_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 FONT_PATH_REG = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
 
@@ -1707,15 +1811,16 @@ def render(button_num, full_refresh=True):
         font_body = ImageFont.truetype(FONT_PATH_BOLD, 40)
         font_small = ImageFont.truetype(FONT_PATH_REG, 11)
 
-        if entry is None:
+${apEnabled ? `        if in_fallback_hotspot_mode():
+            # Takes priority over the normal view AND over "no data yet" -
+            # a gauge that hasn't had a chance to fetch since boot (which
+            # is exactly what happens with no WiFi) would otherwise hide
+            # these recovery instructions behind that message forever.
+            draw_fallback_hotspot_screen(draw, w, h, font_title, font_small)
+        elif entry is None:` : `        if entry is None:`}
             draw.text((8, 8), "No data yet", font=font_title, fill=0)
             draw.text((8, h // 2 - 6), f"Button {button_num} is not configured", font=font_small, fill=0)
-${apEnabled ? `        elif in_fallback_hotspot_mode():
-            # Takes priority over the normal view - there's no real internet
-            # right now, so a recovery message is more useful than even a
-            # configured gauge's stale cached reading.
-            draw_fallback_hotspot_screen(draw, w, h, font_title, font_small)
-` : ''}        else:
+        else:
             # Row 1: label (left) + last 3 digits of the Pi's IP (right) - so
             # it's easy to tell which device this is on a network with more
             # than one running. Kept off Row 3 below on purpose: that row is
@@ -1879,7 +1984,7 @@ def draw_config_pin_screen():
         draw.text((8, 68), "(or 10.42.0.1:8080)", font=font_small, fill=0)
         draw.text((8, 90), "Enter this PIN:", font=font_small, fill=0)
         draw.text((8, 104), pin, font=font_title, fill=0)
-        draw.text((8, 134), "(expires in a few minutes)", font=font_small, fill=0)
+        draw.text((8, 134), "(expires in about 10 min)", font=font_small, fill=0)
         if load_flip180():
             image = image.rotate(180)
         buf = epd.getbuffer(image)
@@ -2507,7 +2612,9 @@ _sessions = {}  # token -> expiry epoch float
 _session_lock = threading.Lock()
 
 CONFIG_PIN_FILE = os.path.expanduser("~/river_display/config_pin.txt")
-CONFIG_PIN_VALID_SECONDS = 180  # how long a freshly-shown PIN stays valid
+CONFIG_PIN_VALID_SECONDS = 600  # how long a freshly-shown PIN stays valid -
+# also how long the display's fallback-hotspot screen keeps a PIN shown
+# there current, so the two always agree on what's still acceptable
 CONFIG_PIN_REQUEST_FILE = os.path.expanduser("~/river_display/.config_pin_request")
 _pin_revert_timer = None
 _pin_generate_lock = threading.Lock()
@@ -3105,10 +3212,15 @@ ${apEnabled ? WIFI_POST_PY : ''}        length = int(self.headers.get("Content-L
         subprocess.Popen(["/usr/bin/python3", os.path.expanduser("~/river_display/river_display.py")])
         if "logout_after_save" in fields:
             _destroy_session(self)
-            self.send_response(303)
-            self.send_header("Location", "/")
+            # Render directly, same as _handle_logout - a redirect to "/"
+            # would land back on the login page, which reveals a fresh
+            # PIN on its own and undoes the save that just happened.
+            body = LOGOUT_PAGE_HTML.encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Set-Cookie", "session=; Path=/; Max-Age=0")
             self.end_headers()
+            self.wfile.write(body)
             return
         self._render(msg='<p class="msg">Saved - display is refreshing now.</p>')
 
@@ -3360,10 +3472,15 @@ ${apEnabled ? WIFI_POST_PY : ''}        length = int(self.headers.get("Content-L
             subprocess.run(["sudo", "-n", "systemctl", "restart", "river-display.service"], timeout=10)
             if "logout_after_save" in fields:
                 _destroy_session(self)
-                self.send_response(303)
-                self.send_header("Location", "/")
+                # Render directly, same as _handle_logout - a redirect to
+                # "/" would land back on the login page, which reveals a
+                # fresh PIN on its own and undoes the save that just happened.
+                body = LOGOUT_PAGE_HTML.encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
                 self.send_header("Set-Cookie", "session=; Path=/; Max-Age=0")
                 self.end_headers()
+                self.wfile.write(body)
                 return
             msg = '<p class="msg">Saved - display service restarting now.</p>'
         except Exception as e:
@@ -3822,8 +3939,8 @@ echo "Change the gauge anytime at: http://$(hostname -I | awk '{print $1}'):8080
     const apNote = opts.fallbackAp
       ? ' and the fallback setup hotspot'
       : '';
-    const lastStepMulti = `The last 3 digits of the Pi's IP now show on the display itself, with a small WiFi icon underneath. Visit <code>http://&lt;that-ip&gt;:8080</code> from any browser on the same network to change a gauge or flip the display${opts.fallbackAp ? ', or to join a new WiFi network — the display itself shows reconnect instructions if the Pi ever loses WiFi entirely' : ''} — no SSH required. The page itself will ask for a PIN — visiting it makes the Pi show a fresh one on its own display, valid for a few minutes, and you'll stay logged in for about 30 minutes after that.`;
-    const lastStepSingle = `The last 3 digits of the Pi's IP now show on the display itself, with a small WiFi icon underneath. Visit <code>http://&lt;that-ip&gt;:8080</code> from any browser on the same network to change the gauge or flip the display${opts.fallbackAp ? ', or to join a new WiFi network — the display itself shows reconnect instructions if the Pi ever loses WiFi entirely' : ''} — no SSH required. The page itself will ask for a PIN — visiting it makes the Pi show a fresh one on its own display, valid for a few minutes, and you'll stay logged in for about 30 minutes after that.`;
+    const lastStepMulti = `The last 3 digits of the Pi's IP now show on the display itself, with a small WiFi icon underneath. Visit <code>http://&lt;that-ip&gt;:8080</code> from any browser on the same network to change a gauge or flip the display${opts.fallbackAp ? ', or to join a new WiFi network — the display itself shows reconnect instructions if the Pi ever loses WiFi entirely' : ''} — no SSH required. The page itself will ask for a PIN — visiting it makes the Pi show a fresh one on its own display, valid about 10 minutes, and you'll stay logged in for about 30 minutes after that.`;
+    const lastStepSingle = `The last 3 digits of the Pi's IP now show on the display itself, with a small WiFi icon underneath. Visit <code>http://&lt;that-ip&gt;:8080</code> from any browser on the same network to change the gauge or flip the display${opts.fallbackAp ? ', or to join a new WiFi network — the display itself shows reconnect instructions if the Pi ever loses WiFi entirely' : ''} — no SSH required. The page itself will ask for a PIN — visiting it makes the Pi show a fresh one on its own display, valid about 10 minutes, and you'll stay logged in for about 30 minutes after that.`;
     const qrStep = `Optional: visit <code>http://&lt;hostname&gt;.local:8080/qr.png</code> once from a browser and save the image — it's a QR code for this exact page, using the Pi's real hostname. Print it or tuck it in with the device so opening the config page later is just a camera scan away, no typing an address at all.`;
     if (opts.displayHardware === '2.7'){
       stepsEl.innerHTML = `<ol>

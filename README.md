@@ -227,7 +227,7 @@ http://<the-pi's-ip>:8080
 
 The page will ask for a PIN — there's no username or password to
 remember. Visiting it makes the Pi show a fresh PIN on its own
-display (valid for a few minutes), so you'll need to be near the
+display (valid about 10 minutes), so you'll need to be near the
 device the first time you log in. Enter that PIN and you'll stay
 logged in for about 30 minutes. This is what keeps the page from
 being usable by anyone else who happens to be on the same network as
@@ -271,18 +271,19 @@ fallback hotspot is active, so you don't need to already know this
 feature exists to find your way back:
 
 1. On your phone or laptop, connect to the WiFi network named on the
-   display (defaults to `<display label>-setup`), using the PIN shown
-   right there on the display as the password — it's not something you
-   set in the setup tool, the Pi generates it itself and rotates it
-   periodically like a 2FA code while nobody's connected. Expect a "no
-   internet" warning on this network — that's normal, it's local-only.
+   display (defaults to `<display label>-setup`), using the **WiFi
+   PIN** shown right there on the display as the password — it's not
+   something you set in the setup tool, the Pi generates it itself and
+   rotates it periodically like a 2FA code while nobody's connected.
+   Expect a "no internet" warning on this network — that's normal,
+   it's local-only.
 2. Open the address shown on the display in a browser — normally
    `<hostname>.local:8080`, with `10.42.0.1:8080` underneath as a
    fallback if `.local` doesn't resolve on your device. It'll prompt
-   for a PIN — no username or password. Visiting the page makes the
-   display switch to showing a fresh, separate PIN for this step; enter
-   that one. This isn't the same as the hotspot's own WiFi PIN from
-   step 1.
+   for a PIN — no username. Enter the **Login PIN**, shown right below
+   the WiFi PIN on the same screen — the two are labeled separately on
+   purpose, since they're different numbers for different steps. No
+   need to visit the display twice; both are there from the start.
 3. Use the **"Join a WiFi network"** section to pick your (real)
    network and enter its password, then submit.
 4. The Pi switches over and the hotspot disappears within a few
