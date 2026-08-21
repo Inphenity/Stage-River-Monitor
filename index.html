@@ -3701,8 +3701,7 @@ WorkingDirectory=/home/$(whoami)/river_display
 ExecStart=/usr/bin/python3 /home/$(whoami)/river_display/config_server.py
 Restart=on-failure
 RestartSec=10${apEnabled ? `
-AmbientCapabilities=CAP_NET_BIND_SERVICE
-CapabilityBoundingSet=CAP_NET_BIND_SERVICE` : ''}
+AmbientCapabilities=CAP_NET_BIND_SERVICE` : ''}
 
 [Install]
 WantedBy=multi-user.target
@@ -3800,8 +3799,7 @@ WorkingDirectory=/home/$(whoami)/river_display
 ExecStart=/usr/bin/python3 /home/$(whoami)/river_display/config_server.py
 Restart=on-failure
 RestartSec=10${apEnabled ? `
-AmbientCapabilities=CAP_NET_BIND_SERVICE
-CapabilityBoundingSet=CAP_NET_BIND_SERVICE` : ''}
+AmbientCapabilities=CAP_NET_BIND_SERVICE` : ''}
 
 [Install]
 WantedBy=multi-user.target
