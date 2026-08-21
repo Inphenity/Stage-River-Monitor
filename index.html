@@ -122,6 +122,8 @@ input::placeholder{ color: #4F7386; }
   border-radius: var(--radius); background: var(--bg-panel-2); color: var(--ink-muted);
   cursor:pointer; user-select:none;
 }
+.minute-chip{ appearance:none; -webkit-appearance:none; }
+.minute-chip:focus-visible{ outline: 2px solid var(--line-bright); outline-offset:2px; }
 .minute-chip.active{ border-color: var(--amber); color: var(--amber); background: rgba(232,196,104,0.08); }
 .minute-chip .chip-remove{ margin-left:7px; color: var(--danger); font-weight:700; }
 .quick-set-row{ display:flex; flex-wrap:wrap; gap:8px; margin-bottom:4px; }
@@ -538,9 +540,11 @@ footer{ text-align:center; color: var(--ink-muted); font-family: var(--mono); fo
   function renderMinuteChips(){
     minutePicker.innerHTML = '';
     Array.from(activeMinutes).sort((a,b)=>a-b).forEach(m => {
-      const chip = document.createElement('div');
+      const chip = document.createElement('button');
+      chip.type = 'button';
       chip.className = 'minute-chip active';
       chip.innerHTML = ':' + String(m).padStart(2,'0') + ' <span class="chip-remove">&times;</span>';
+      chip.setAttribute('aria-label', 'Remove refresh time :' + String(m).padStart(2,'0'));
       chip.dataset.min = m;
       chip.addEventListener('click', () => {
         activeMinutes.delete(m);
