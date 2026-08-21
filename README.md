@@ -236,6 +236,15 @@ After 5 wrong attempts, that source stops being able to try again for
 a minute — so mistype it a few times and you'll just need to wait
 briefly before the next try.
 
+One thing worth knowing: if a scheduled refresh or a button press
+happens to fire while the PIN is on screen, it'll get overwritten with
+the normal gauge reading — even though the PIN itself might still be
+valid for a few more minutes. If that happens mid-login, just visit
+`:8080` again to get a fresh one drawn. This is deliberate — the
+alternative would mean buttons stop responding while a login is
+pending, which felt like the wrong trade-off for something a fresh
+visit fixes in a few seconds.
+
 - **2.13" (single-gauge):** change the label, USGS site number,
   measurement, or the 180° flip, and the display refreshes immediately
   after you save.
