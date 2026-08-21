@@ -1980,13 +1980,10 @@ def draw_config_pin_screen():
         draw = ImageDraw.Draw(image)
         font_title = ImageFont.truetype(FONT_PATH_BOLD, 16)
         font_small = ImageFont.truetype(FONT_PATH_REG, 11)
-        hostname = socket.gethostname()
-        draw.text((6, 6), "Config access requested", font=font_title, fill=0)
-        draw.text((6, 30), "Visit:", font=font_small, fill=0)
-        url_display = truncate_to_width(draw, f"{hostname}.local:8080", font_title, epd.height - 12)
-        draw.text((6, 42), url_display, font=font_title, fill=0)
-        draw.text((6, 68), "Enter this PIN:", font=font_small, fill=0)
-        draw.text((6, 82), pin, font=font_title, fill=0)
+        font_pin = ImageFont.truetype(FONT_PATH_BOLD, 34)
+        draw.text((6, 8), "Config access requested", font=font_title, fill=0)
+        draw.text((6, 42), "Enter this PIN:", font=font_small, fill=0)
+        draw.text((6, 60), pin, font=font_pin, fill=0)
         draw.text((6, 108), "(expires in about 10 min)", font=font_small, fill=0)
         if load_flip180():
             image = image.rotate(180)
@@ -2314,7 +2311,8 @@ fi
   // process that legitimately owns the pins, so it just asks that
   // process to draw instead (see config_pin_request_worker in
   // buildPythonScriptMulti).
-  const SHOW_CONFIG_PIN_PY = `#!/usr/bin/env python3
+  function buildShowConfigPinScript(opts){
+    return `#!/usr/bin/env python3
 """
 Tiny standalone helper - draws the web config page's login PIN on the
 e-paper, then exits immediately. Launched fresh each time by
@@ -2329,7 +2327,6 @@ import sys
 import json
 import time
 import fcntl
-import socket
 from PIL import Image, ImageDraw, ImageFont
 from waveshare_epd import epd2in13_V4 as epd_driver
 
@@ -2338,13 +2335,14 @@ FONT_PATH_REG = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
 CONFIG_PIN_FILE = os.path.expanduser("~/river_display/config_pin.txt")
 CONFIG_FILE = os.path.expanduser("~/river_display/config.json")
 EPD_LOCK_FILE = os.path.expanduser("~/river_display/epd.lock")
+DEFAULT_FLIP180 = ${opts.flip180 ? 'True' : 'False'}
 
 def load_flip180():
     try:
         with open(CONFIG_FILE) as f:
-            return bool(json.load(f).get("flip180", False))
+            return bool(json.load(f).get("flip180", DEFAULT_FLIP180))
     except Exception:
-        return False
+        return DEFAULT_FLIP180
 
 def _epd_lock(timeout=5):
     fd = open(EPD_LOCK_FILE, "w")
@@ -2390,14 +2388,11 @@ def main():
         draw = ImageDraw.Draw(image)
         font_title = ImageFont.truetype(FONT_PATH_BOLD, 14)
         font_small = ImageFont.truetype(FONT_PATH_REG, 10)
-        hostname = socket.gethostname()
+        font_pin = ImageFont.truetype(FONT_PATH_BOLD, 26)
         draw.text((6, 4), "Config access requested", font=font_title, fill=0)
-        draw.text((6, 26), "Visit:", font=font_small, fill=0)
-        url_display = truncate_to_width(draw, f"{hostname}.local:8080", font_title, epd.height - 12)
-        draw.text((6, 38), url_display, font=font_title, fill=0)
-        draw.text((6, 62), "Enter this PIN:", font=font_small, fill=0)
-        draw.text((6, 74), pin, font=font_title, fill=0)
-        draw.text((6, 100), "(expires in ~10 min)", font=font_small, fill=0)
+        draw.text((6, 30), "Enter this PIN:", font=font_small, fill=0)
+        draw.text((6, 44), pin, font=font_pin, fill=0)
+        draw.text((6, 78), "(expires in ~10 min)", font=font_small, fill=0)
         if load_flip180():
             image = image.rotate(180)
         buf = epd.getbuffer(image)
@@ -2417,6 +2412,7 @@ def main():
 if __name__ == "__main__":
     main()
 `;
+  }
 
   const CONFIG_PAGE_CSS = `body{font-family:Arial,Helvetica,sans-serif;max-width:480px;margin:40px auto;padding:0 16px;background:#0D2431;color:#E7F1F5}
 h1{font-size:19px;margin-bottom:2px}.sub{color:#7FA3B3;font-size:12.5px;margin-top:0}
@@ -3789,7 +3785,7 @@ chmod +x ~/river_display/config_server.py
 # e-paper driver itself (which claims the GPIO pins for as long as the
 # importing process stays alive). ----
 cat > ~/river_display/show_config_pin.py << 'PYEOF'
-${SHOW_CONFIG_PIN_PY}PYEOF
+${buildShowConfigPinScript(opts)}PYEOF
 chmod +x ~/river_display/show_config_pin.py
 
 sudo tee /etc/systemd/system/river-display-config.service > /dev/null << SERVICEEOF
