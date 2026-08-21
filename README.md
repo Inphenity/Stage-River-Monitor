@@ -300,6 +300,7 @@ otherwise it stays off and out of the way.
 
 Jump to your issue:
 [Display blank/not updating](#display-blank) ·
+[Re-install didn't apply new settings](#stale-config) ·
 [No data / network error](#no-data) ·
 [GPIO busy](#gpio-busy) ·
 [Can't SSH in](#cant-ssh) ·
@@ -322,6 +323,28 @@ is the most common cause. After rebooting, re-run the test manually to
 see any error output directly:
 ```
 cd ~/river_display && python3 river_display.py
+```
+
+<a id="stale-config"></a>
+
+**Re-ran the install script with new settings, but the display still shows the old ones**
+`config.json` is deliberately left alone by the install script — it's
+what lets any live changes you've made through the web config page
+survive a re-install (say, one to add a PiSugar or pick up a bug fix).
+The trade-off: if a gauge already has a saved entry in there, the
+fresh script's new defaults for that same gauge get silently
+overridden by whatever's already saved, even though the script itself
+ran successfully. If a re-install doesn't seem to have taken effect,
+this is almost always why. Clear it and restart to confirm:
+```
+# Multi-gauge (2.7")
+sudo systemctl stop river-display
+rm ~/river_display/config.json
+sudo systemctl start river-display
+
+# Single-gauge (2.13")
+rm ~/river_display/config.json
+python3 ~/river_display/river_display.py
 ```
 
 <a id="no-data"></a>
