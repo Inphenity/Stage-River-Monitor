@@ -2070,12 +2070,21 @@ def main():
     if not GAUGES:
         print("No gauges configured - nothing to display.", file=sys.stderr)
         sys.exit(1)
-    wait_for_network_and_refresh()
-    render(current_button, full_refresh=True)
+    # Background threads start first, before the initial fetch below -
+    # that fetch retries with backoff (up to 30s between tries) if USGS
+    # is slow to respond, and every save-triggered restart of this
+    # service re-runs this whole sequence from scratch. Starting these
+    # threads first means the daemon is immediately ready to handle a
+    # login PIN request, a button press, or a force-refresh trigger
+    # from the moment it comes up - not just after that first fetch
+    # happens to succeed, which could otherwise leave a real gap where
+    # a request arrives but nothing is listening for it yet.
     threading.Thread(target=scheduler_worker, daemon=True).start()
     threading.Thread(target=force_refresh_worker, daemon=True).start()
     threading.Thread(target=config_pin_request_worker, daemon=True).start()
-${apEnabled ? '    threading.Thread(target=hotspot_pin_worker, daemon=True).start()\n' : ''}    button_worker()  # runs forever on the main thread
+${apEnabled ? '    threading.Thread(target=hotspot_pin_worker, daemon=True).start()\n' : ''}    wait_for_network_and_refresh()
+    render(current_button, full_refresh=True)
+    button_worker()  # runs forever on the main thread
 
 if __name__ == "__main__":
     main()
