@@ -245,6 +245,12 @@ alternative would mean buttons stop responding while a login is
 pending, which felt like the wrong trade-off for something a fresh
 visit fixes in a few seconds.
 
+<p align="center">
+  <img src="docs/images/login-pin-screen.svg" alt="E-paper display showing the config login PIN" width="45%">
+  <img src="docs/images/web-portal.svg" alt="Web config portal in a browser" width="45%">
+</p>
+<p align="center"><em>Left: the login PIN shown on the display. Right: the web config portal after entering it. (Illustrative mockups, not live screenshots.)</em></p>
+
 - **2.13" (single-gauge):** change the label, USGS site number,
   measurement, or the 180° flip, and the display refreshes immediately
   after you save.
@@ -299,6 +305,12 @@ feature exists to find your way back:
    seconds. Reconnect your phone/laptop to your normal WiFi, then find
    the Pi there as usual (`ssh` by hostname, or the IP shown on the
    display).
+
+<p align="center">
+  <img src="docs/images/hotspot-reconnect-screen.svg" alt="E-paper display showing the fallback hotspot name, WiFi PIN, and login PIN" width="45%">
+  <img src="docs/images/hotspot-wifi-list.svg" alt="Phone's WiFi list showing the fallback hotspot network" width="45%">
+</p>
+<p align="center"><em>Left: the display's reconnect screen with both PINs and the portal address. Right: the hotspot as it appears in a phone's WiFi list. (Illustrative mockups, not live screenshots.)</em></p>
 
 The hotspot only ever activates when normal WiFi is unreachable —
 otherwise it stays off and out of the way.
